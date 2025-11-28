@@ -49,7 +49,7 @@ const Icons = {
   Download: ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
 };
 
-// --- CONFIGURACIÓN SLA (26 DÍAS TOTAL) ---
+// --- CONFIGURACIÓN SLA ---
 const STAGE_CONFIG = [
   { id: 'contact', label: "Fecha 1er Contacto", days: 0 }, 
   { id: 'visit', label: "Fecha de Visita", days: 3 },
@@ -64,7 +64,7 @@ const STAGE_CONFIG = [
   { id: 'delivery', label: "Entrega Vehículo", days: 1 }
 ];
 
-const MAX_SLA_DAYS = 26; // Total de días laborables
+const MAX_SLA_DAYS = 26;
 const ATTACHMENT_STAGES = ['docs', 'approval', 'order_emit', 'invoice', 'contract', 'insurance', 'registration', 'delivery_order'];
 
 // --- UTILIDADES DE FECHA ---
@@ -148,7 +148,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState(""); 
   const [stageModal, setStageModal] = useState(null); 
 
-  // 1. CARGA Y AUTO-REPARACIÓN DE DATOS
+  // 1. CARGA Y AUTO-REPARACIÓN DE DATOS (ANTI-CRASH)
   useEffect(() => {
     const repairData = (data) => {
         if (!Array.isArray(data)) return [];
@@ -191,19 +191,31 @@ export default function App() {
     }
   }, []);
 
+  // 2. SINCRONIZACIÓN BD
   useEffect(() => {
     if (isOnlineMode && user && db) {
         const q = collection(db, 'artifacts', appId, 'public', 'data', 'clients');
         const unsubscribe = onSnapshot(q, (snapshot) => {
-          const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setClients(clientsData); 
-          setLoading(false);
+            const clientsData = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    stages: data.stages || {},
+                    attachments: data.attachments || {},
+                    clientCode: data.clientCode || '',
+                    city: data.city || '',
+                    adjudicationType: data.adjudicationType || 'Sorteo'
+                };
+            });
+            setClients(clientsData); 
+            setLoading(false);
         }, (error) => { console.error(error); setLoading(false); });
         return () => unsubscribe();
-    } else if (!isOnlineMode) {
+    } else if (!isOnlineMode && !loading) { // CORRECCIÓN CRÍTICA: SOLO GUARDAR SI NO ESTÁ CARGANDO
         localStorage.setItem('autoflow_db_v1', JSON.stringify(clients));
     }
-  }, [user, clients, isOnlineMode]);
+  }, [user, clients, isOnlineMode, loading]);
 
   const loadDemoData = async () => {
     const demoClients = [
@@ -332,20 +344,23 @@ export default function App() {
     const totalClients = clients.length;
     const activeClients = clients.filter(c => !c.stages?.delivery).length;
     
-    // 1. CALCULAR DÍAS USADOS DE TODOS LOS CLIENTES (ACTIVOS + ENTREGADOS)
+    const deliveredClients = clients.filter(c => c.stages?.delivery);
+    const totalDeliveryDays = deliveredClients.reduce((acc, c) => acc + getWorkingDays(c.adjudicationDate, c.stages.delivery), 0);
+    const avgDeliveryTime = deliveredClients.length ? (totalDeliveryDays / deliveredClients.length).toFixed(1) : 0;
+
+    const riskClients = clients.filter(c => {
+      if (!c.adjudicationDate || c.stages?.delivery) return false;
+      return getWorkingDays(c.adjudicationDate, getTodayString()) > 15;
+    }).length;
+
+    // Cálculo Promedio Días Usados Global
     const totalDaysUsedAll = clients.reduce((acc, client) => {
         if (!client.adjudicationDate) return acc;
-        // Si ya se entregó, usamos fecha entrega. Si no, fecha de hoy.
         const endDate = client.stages?.delivery || getTodayString();
         const days = getWorkingDays(client.adjudicationDate, endDate);
         return acc + days;
     }, 0);
-
-    // 2. DIVIDIR POR EL NÚMERO TOTAL DE CLIENTES REGISTRADOS
     const avgDaysUsed = totalClients > 0 ? (totalDaysUsedAll / totalClients).toFixed(1) : 0;
-
-    const deliveredClients = clients.filter(c => c.stages?.delivery);
-    const riskClients = clients.filter(c => { if (!c.adjudicationDate || c.stages?.delivery) return false; return getWorkingDays(c.adjudicationDate, getTodayString()) > 15; }).length;
 
     const pieData = [
         { name: 'A Tiempo', value: clients.filter(c => !c.stages?.delivery && getWorkingDays(c.adjudicationDate, getTodayString()) <= 15).length, color: '#10b981' },
@@ -363,22 +378,12 @@ export default function App() {
              <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">Panel de Control {loading && <span className="text-xs font-normal text-blue-500 animate-pulse">(Cargando...)</span>}</h2>
              <button onClick={exportToExcel} className="bg-slate-800 text-white px-3 py-1.5 rounded-md text-xs flex items-center gap-2 hover:bg-slate-700 transition"><Icons.Download className="w-4 h-4"/> Descargar Excel</button>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="p-4 border-l-4 border-l-blue-500"><div className="text-slate-500 text-sm font-medium">Clientes Activos</div><div className="text-3xl font-bold text-slate-800">{activeClients}</div></Card>
           <Card className="p-4 border-l-4 border-l-amber-500"><div className="text-slate-500 text-sm font-medium">En Riesgo (&gt;15 días)</div><div className="text-3xl font-bold text-slate-800">{riskClients}</div></Card>
           <Card className="p-4 border-l-4 border-l-emerald-500"><div className="text-slate-500 text-sm font-medium">Vehículos Entregados</div><div className="text-3xl font-bold text-slate-800">{deliveredClients.length}</div></Card>
-          
-          {/* NUEVA TARJETA: PROMEDIO GLOBAL DE DÍAS USADOS */}
-          <Card className="p-4 border-l-4 border-l-purple-500 col-span-1 md:col-span-2">
-             <div className="text-slate-500 text-sm font-medium">Promedio Días Usados Global</div>
-             <div className="text-3xl font-bold text-slate-800 flex items-baseline gap-2">
-                 {avgDaysUsed} 
-                 <span className="text-sm font-normal text-slate-400">días / {MAX_SLA_DAYS}</span>
-             </div>
-          </Card>
+          <Card className="p-4 border-l-4 border-l-purple-500"><div className="text-slate-500 text-sm font-medium">Promedio Días Usados Global</div><div className="text-3xl font-bold text-slate-800">{avgDaysUsed}<span className="text-sm font-normal text-slate-400 ml-1">días / {MAX_SLA_DAYS}</span></div></Card>
         </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="p-6 col-span-1 flex flex-col items-center justify-center">
                 <h3 className="text-lg font-semibold mb-4 text-slate-700 w-full text-left">Estado General</h3>
@@ -402,12 +407,10 @@ export default function App() {
                 ))}</div>
             </Card>
         </div>
-        <div className="grid grid-cols-1"><Card className="p-6"><h3 className="text-lg font-semibold mb-4 text-slate-700">Acciones Rápidas</h3><div className="flex gap-4"><button onClick={() => setView('form')} className="flex-1 flex items-center justify-center gap-2 p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition border border-blue-200"><Icons.Plus className="w-6 h-6" /> <span className="font-bold">Registrar Nuevo</span></button><button onClick={() => setView('list')} className="flex-1 flex items-center justify-center gap-2 p-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition border border-emerald-200"><Icons.Users className="w-6 h-6" /> <span className="font-bold">Ver Lista</span></button></div></Card></div>
       </div>
     );
   };
 
-  // ... (ClientDetailView, NewClientForm, etc. se mantienen sin cambios)
   const ClientDetailView = () => {
     if (!selectedClient) return null;
     const clientStages = selectedClient.stages || {};
@@ -436,7 +439,7 @@ export default function App() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v4.32)</h3>
+            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v5.2)</h3>
             {STAGE_CONFIG.map((stage, index) => {
               const currentDateStr = clientStages[stage.id] || "";
               const isCompleted = !!currentDateStr;
@@ -460,15 +463,26 @@ export default function App() {
                   relativeBaseDate = targetDate;
               }
 
+              if (stage.id === 'contact') {
+                  statusElement = isCompleted ? 
+                      <span className="text-xs text-emerald-600 mt-1 font-bold flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded border border-emerald-100"> <Icons.CheckCircle className="w-3 h-3"/> Registrado</span> 
+                      : <div className="text-xs text-slate-400 italic">Pendiente de registro</div>;
+              }
+
               return (
-                <div key={stage.id} className={`relative flex items-center p-4 rounded-lg border transition-all ${isCompleted ? (statusElement.props.className.includes("rose") ? "border-rose-200 bg-rose-50/30" : "border-emerald-200 bg-emerald-50/30") : "border-slate-200 bg-white"}`}>
+                <div key={stage.id} className={`relative flex items-center p-4 rounded-lg border transition-all ${isCompleted ? (statusElement.props && statusElement.props.className && statusElement.props.className.includes("rose") ? "border-rose-200 bg-rose-50/30" : "border-emerald-200 bg-emerald-50/30") : "border-slate-200 bg-white"}`}>
                   {index < STAGE_CONFIG.length - 1 && <div className="absolute left-8 top-12 bottom-[-16px] w-0.5 bg-slate-200 -z-10"></div>}
-                  <div className="mr-4 flex-shrink-0 z-10"><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${isCompleted ? (statusElement.props.className.includes("rose") ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600") : "bg-slate-100 text-slate-400"}`}>{isCompleted ? (statusElement.props.className.includes("rose") ? <Icons.AlertCircle className="w-5 h-5"/> : <Icons.CheckCircle className="w-5 h-5"/>) : index + 1}</div></div>
+                  <div className="mr-4 flex-shrink-0 z-10"><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${isCompleted ? (statusElement.props && statusElement.props.className && statusElement.props.className.includes("rose") ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600") : "bg-slate-100 text-slate-400"}`}>{isCompleted ? (statusElement.props && statusElement.props.className && statusElement.props.className.includes("rose") ? <Icons.AlertCircle className="w-5 h-5"/> : <Icons.CheckCircle className="w-5 h-5"/>) : index + 1}</div></div>
                   <div className="flex-grow grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                    <div className="md:col-span-4"><div className="font-semibold text-slate-800 text-sm">{stage.label}</div><div className="text-xs text-slate-500">Meta: {stage.days} días<div className="text-[10px] text-slate-400 font-mono mt-0.5">Vence: {targetDate.toISOString().split('T')[0]}</div></div></div>
+                    <div className="md:col-span-4">
+                        <div className="font-semibold text-slate-800 text-sm">{stage.label}</div>
+                        <div className="text-xs text-slate-500">
+                            {stage.days > 0 ? `Meta: ${stage.days} días` : 'Registro Inicial'}
+                            {stage.days > 0 && <div className="text-[10px] text-slate-400 font-mono mt-0.5">Vence: {targetDate.toISOString().split('T')[0]}</div>}
+                        </div>
+                    </div>
                     <div className="md:col-span-4">
                         <input type="date" className="w-full text-sm p-1.5 rounded border border-slate-300 mb-2" value={currentDateStr} onChange={(e) => updateClientStage(selectedClient.id, stage.id, e.target.value)} />
-                        {/* INPUT PARA ADJUNTAR EN MULTIPLES ETAPAS */}
                         {ATTACHMENT_STAGES.includes(stage.id) && (
                              <div className="flex items-center gap-2">
                                  {attachment ? (
@@ -487,7 +501,7 @@ export default function App() {
                         )}
                     </div>
                     <div className="md:col-span-4 text-right flex flex-col items-end justify-center">
-                      {isCompleted && <div className="flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded mb-1"><Icons.Clock className="w-3 h-3" /> Tomó: {stageDuration} días</div>}
+                      {isCompleted && stage.days > 0 && <div className="flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded mb-1"><Icons.Clock className="w-3 h-3" /> Tomó: {stageDuration} días</div>}
                       {statusElement}
                       {stage.id === 'docs' && isCompleted && <button onClick={() => openEmailModal(selectedClient)} className="mt-2 text-xs flex items-center gap-1 bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition font-medium border border-blue-200"><Icons.Mail className="w-3 h-3"/> Notificar a Gerencia</button>}
                     </div>
@@ -505,7 +519,6 @@ export default function App() {
     const filteredClients = clients.filter(c => {
        if (!searchTerm) return true;
        const term = searchTerm.toLowerCase();
-       // SAFETY CHECK: Convertir a String antes de toLowerCase()
        return (
           (String(c.name || '').toLowerCase().includes(term)) ||
           (String(c.cedula || '').includes(term)) ||
@@ -605,7 +618,7 @@ export default function App() {
       <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-3 font-bold text-lg"><img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-full bg-white p-0.5" /><span>Workflow Auto Club</span></div>
-          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v4.33 (Promedio Global)</div>
+          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v5.2 (Corrección Guardado)</div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <button type="button" onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${view === 'form' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
