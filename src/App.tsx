@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 // ====================================================================================
-// 🟢 CREDENCIALES INTEGRADAS (YA LISTAS PARA USAR)
+// 🟢 TUS CREDENCIALES DE FIREBASE (YA LAS PUSE AQUÍ POR TI)
 // ====================================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBZJ-bkq9eGJEhCdirSPl6O1nI3XGvp-CY",
@@ -16,23 +17,25 @@ const firebaseConfig = {
 };
 // ====================================================================================
 
-// Variables globales de Firebase
+// Variables globales
 let app = null;
+let auth = null;
 let db = null;
 const appId = 'auto-club-main';
 
-// Inicialización segura de la app (Sin autenticación forzosa)
+// Inicialización Inmediata
 try {
-  if (!app && firebaseConfig.apiKey) {
+  if (firebaseConfig.apiKey) {
     app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
     db = getFirestore(app);
-    console.log("✅ Firebase Inicializado (Modo Directo)");
+    console.log("✅ FIREBASE CONECTADO EXITOSAMENTE");
   }
 } catch (e) {
-  console.error("Error inicializando:", e);
+  console.error("Error crítico al conectar:", e);
 }
 
-// --- ICONOS (SVG Nativos para evitar errores de librería) ---
+// --- ICONOS ---
 const Icons = {
   Users: ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
   Calendar: ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>,
@@ -73,6 +76,7 @@ const STAGE_CONFIG = [
   { id: 'delivery_order', label: "Orden de Entrega", days: 2 },
   { id: 'delivery', label: "Entrega Vehículo", days: 1 }
 ];
+
 const MAX_SLA_DAYS = 26;
 const ATTACHMENT_STAGES = ['docs', 'approval', 'order_emit', 'invoice', 'contract', 'insurance', 'registration', 'delivery_order'];
 
@@ -149,85 +153,63 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [selectedClient, setSelectedClient] = useState(null);
   const [clients, setClients] = useState([]);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isOnlineMode, setIsOnlineMode] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailData, setEmailData] = useState(null);
   const [searchTerm, setSearchTerm] = useState(""); 
   const [stageModal, setStageModal] = useState(null); 
-  const [isLoaded, setIsLoaded] = useState(false); 
 
-  // 1. CARGA DE DATOS CON PRIORIDAD A LA NUBE
+  // 1. CARGA DE DATOS E INICIO DE SESIÓN ANÓNIMA
   useEffect(() => {
     const initData = async () => {
-      if (db) {
-        // Intentar conexión a Nube
-        try {
-          const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), (snap) => {
-              const cloudData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              setClients(cloudData);
-              setIsOnlineMode(true);
-              setLoading(false);
-              setIsLoaded(true);
-          }, (error) => {
-             console.error("Fallo conexión nube, usando local:", error);
-             loadLocalData();
-          });
-          return () => unsub();
-        } catch (e) {
-          console.log("Error inicializando listener:", e);
-          loadLocalData();
-        }
-      } else {
-        loadLocalData();
-      }
-    };
-
-    const loadLocalData = () => {
-        setIsOnlineMode(false);
-        const saved = localStorage.getItem('autoflow_db_v1');
-        if (saved) {
-            try { 
-                const parsed = JSON.parse(saved);
-                // Asegurar compatibilidad de datos
-                const cleanData = Array.isArray(parsed) ? parsed.map(c => ({
-                    ...c,
-                    stages: c.stages || {},
-                    attachments: c.attachments || {},
-                    clientCode: c.clientCode || '',
-                    city: c.city || '',
-                    adjudicationType: c.adjudicationType || 'Sorteo'
-                })) : [];
-                setClients(cleanData);
-            } catch (e) { setClients([]); }
+        // Si ya pusiste la KEY de Firebase en la linea 10
+        if (firebaseConfig && firebaseConfig.apiKey) {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            await signInAnonymously(auth); // Inicio de sesión anónimo automático
+            onAuthStateChanged(auth, u => setUser(u));
+            setIsOnlineMode(true);
+        } else {
+            // Si no hay key, usar localStorage con protección
+            setIsOnlineMode(false);
+            const saved = localStorage.getItem('autoflow_db_v1');
+            if (saved) {
+                try { setClients(JSON.parse(saved)); } catch (e) { setClients([]); }
+            }
         }
         setLoading(false);
-        setIsLoaded(true);
     };
-
     initData();
   }, []);
 
-  // 2. GUARDADO LOCAL (RESPALDO)
+  // 2. SINCRONIZACIÓN NUBE (REALTIME)
   useEffect(() => {
-    if (isLoaded) {
+    if (isOnlineMode && db) {
+        const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), (snap) => {
+            const clientsData = snap.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    stages: data.stages || {},
+                    attachments: data.attachments || {},
+                    clientCode: data.clientCode || '',
+                    city: data.city || '',
+                    adjudicationType: data.adjudicationType || 'Sorteo'
+                };
+            });
+            setClients(clientsData); 
+            setLoading(false);
+        }, (error) => { console.error(error); setLoading(false); });
+        return () => unsub();
+    } else if (!isOnlineMode && !loading) { 
+        // SÓLO GUARDAR EN LOCAL SI YA SE CARGARON LOS DATOS INICIALES
         localStorage.setItem('autoflow_db_v1', JSON.stringify(clients));
     }
-  }, [clients, isLoaded]);
-
-  const loadDemoData = async () => {
-    const demoClients = [
-        { name: "Ejemplo 1", cedula: "0999000111", phone: "0991234567", inscriptionDate: getPastDate(5), adjudicationDate: getTodayString(), stages: { contact: getTodayString() }, clientCode: "CLI-001", city: "Guayaquil", adjudicationType: "Sorteo" },
-        { name: "Ejemplo 2", cedula: "0999000222", phone: "0997654321", inscriptionDate: getPastDate(40), adjudicationDate: getPastDate(25), stages: { contact: getPastDate(24) }, clientCode: "CLI-002", city: "Quito", adjudicationType: "Oferta" }
-    ];
-    if (isOnlineMode && db) {
-        for (const client of demoClients) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), { ...client, createdAt: new Date().toISOString() });
-    } else {
-        const newClients = demoClients.map((c, i) => ({ ...c, id: `demo-${Date.now()}-${i}` }));
-        setClients(prev => [...prev, ...newClients]);
-    }
-    alert("Datos de prueba cargados.");
-  };
+  }, [user, clients, isOnlineMode, loading]);
 
   const addClient = async (clientData) => {
     if(!clientData.adjudicationDate) {
@@ -246,11 +228,8 @@ export default function App() {
             attachments: {} 
         };
 
-        if (isOnlineMode && db) {
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), newClient);
-        } else {
-            setClients(prev => [...prev, { ...newClient, id: Date.now().toString() }]);
-        }
+        if (isOnlineMode && db) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), newClient);
+        else setClients(prev => [...prev, { ...newClient, id: Date.now().toString() }]);
         setView('list');
     } catch(error) {
         console.error("Error al agregar cliente:", error);
@@ -261,16 +240,9 @@ export default function App() {
   const updateClientStage = async (clientId, stageId, date) => {
     if (!date) return;
     if (isWeekend(parseLocalDate(date))) { alert("⚠️ Selecciona un día laborable."); return; }
-    
-    // Actualización Optimista
-    if (selectedClient && selectedClient.id === clientId) {
-        setSelectedClient(prev => ({ ...prev, stages: { ...prev.stages, [stageId]: date } }));
-    }
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, stages: { ...c.stages, [stageId]: date } } : c));
-
-    if (isOnlineMode && db) {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`stages.${stageId}`]: date });
-    }
+    if (selectedClient && selectedClient.id === clientId) setSelectedClient(prev => ({ ...prev, stages: { ...prev.stages, [stageId]: date } }));
+    if (isOnlineMode && db) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`stages.${stageId}`]: date });
+    else setClients(prev => prev.map(c => c.id === clientId ? { ...c, stages: { ...c.stages, [stageId]: date } } : c));
   };
 
   const uploadAttachment = async (clientId, stageId, file) => {
@@ -282,35 +254,27 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = async (e) => {
           const fileData = { name: file.name, type: file.type, data: e.target.result, date: new Date().toISOString() };
-          
-          // Actualización Optimista
           if (selectedClient && selectedClient.id === clientId) {
-              setSelectedClient(prev => ({ ...prev, attachments: { ...(prev.attachments || {}), [stageId]: fileData } }));
+              const newAttachments = { ...(selectedClient.attachments || {}), [stageId]: fileData };
+              setSelectedClient(prev => ({ ...prev, attachments: newAttachments }));
           }
-          setClients(prev => prev.map(c => c.id === clientId ? { ...c, attachments: { ...(c.attachments || {}), [stageId]: fileData } } : c));
-
-          if (isOnlineMode && db) {
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`attachments.${stageId}`]: fileData });
-          }
+          if (isOnlineMode && db) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`attachments.${stageId}`]: fileData });
+          else setClients(prev => prev.map(c => c.id === clientId ? { ...c, attachments: { ...(c.attachments || {}), [stageId]: fileData } } : c));
       };
       reader.readAsDataURL(file);
   };
 
   const deleteClient = async (clientId) => {
     if(!confirm("¿Estás seguro?")) return;
-    
-    // Actualización Optimista
-    setClients(prev => prev.filter(c => c.id !== clientId));
+    if (isOnlineMode && db) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId));
+    else setClients(clients.filter(c => c.id !== clientId));
     if (selectedClient?.id === clientId) setView('list');
-
-    if (isOnlineMode && db) {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId));
-    }
   };
 
   const openEmailModal = (client) => {
       const subject = `Aprobación Documentos - ${client.name} (CI: ${client.cedula})`;
-      const body = `Estimado Tairo,\n\nSe ha completado la entrega de documentos y pagos para el cliente:\n\n- Nombre: ${client.name}\n- Cédula: ${client.cedula}\n- Teléfono: ${client.phone}\n- Fecha Adj.: ${client.adjudicationDate}\n\nPor favor revisar y aprobar.\n\nNOTA: He adjuntado la imagen/comprobante a este correo.\n\nQuedo atento a su aprobación.\n\nSaludos cordiales`;
+      const senderName = user?.displayName || user?.email || 'Miguel Gurumendi'; 
+      const body = `Estimado Tairo,\n\nSe ha completado la entrega de documentos y pagos para el cliente:\n\n- Nombre: ${client.name}\n- Cédula: ${client.cedula}\n- Teléfono: ${client.phone}\n- Fecha Adj.: ${client.adjudicationDate}\n\nPor favor revisar y aprobar.\n\nNOTA: He adjuntado la imagen/comprobante a este correo.\n\nQuedo atento a su aprobación.\n\nSaludos cordiales,\n${senderName}`;
       setEmailData({ to: 'talvarado@bopelual.com', subject, body });
       setShowEmailModal(true);
   };
@@ -327,6 +291,7 @@ export default function App() {
     setStageModal({ id: data.id, label: data.name, clients: stageClients });
   };
 
+  // --- EXPORTAR A EXCEL ---
   const exportToExcel = () => {
     const headers = ["Código", "Nombre", "Cédula", "Ciudad", "Teléfono", "Tipo Adj.", "F. Inscripción", "F. Adjudicación", "Estado General", ...STAGE_CONFIG.map(s => s.label)];
     let tableHTML = `<table border="1"><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
@@ -406,7 +371,7 @@ export default function App() {
                 <div className="w-full h-64 relative">
                     {pieData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip /><Legend verticalAlign="bottom" /></PieChart></ResponsiveContainer>
-                    ) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-center"><p className="text-slate-400 text-sm mb-2">No hay datos</p><button onClick={loadDemoData} className="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-full">Cargar Ejemplo</button></div>)}
+                    ) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-center"><p className="text-slate-400 text-sm mb-2">No hay datos</p></div>)}
                 </div>
             </Card>
             <Card className="p-6 col-span-1 lg:col-span-2">
@@ -455,7 +420,7 @@ export default function App() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v6.7)</h3>
+            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v7.0)</h3>
             {STAGE_CONFIG.map((stage, index) => {
               const currentDateStr = clientStages[stage.id] || "";
               const isCompleted = !!currentDateStr;
@@ -634,7 +599,7 @@ export default function App() {
       <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-3 font-bold text-lg"><img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-full bg-white p-0.5" /><span>Workflow Auto Club</span></div>
-          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v6.7 (Activación Forzada)</div>
+          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v7.0 (Conexión Nube)</div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <button type="button" onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${view === 'form' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
@@ -653,7 +618,7 @@ export default function App() {
           </button>
         </nav>
         <div className="p-4 border-t border-slate-800 text-xs text-slate-500 flex items-center gap-2">
-            {isOnlineMode ? <><Icons.Cloud className="w-3 h-3 text-emerald-400"/> Conectado (Nube)</> : <><Icons.WifiOff className="w-3 h-3 text-amber-400"/> Modo Local</>}
+            <div className="flex items-center gap-2 text-emerald-400 mb-2"><Icons.Cloud className="w-3 h-3"/> Conectado</div>
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto h-screen flex flex-col">
