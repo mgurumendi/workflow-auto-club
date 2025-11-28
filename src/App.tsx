@@ -4,22 +4,37 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
-// --- CONFIGURACIÓN INTELIGENTE ---
+// --- CONFIGURACIÓN INTELIGENTE (SOPORTE VERCEL) ---
 let app = null;
 let auth = null;
 let db = null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// ID de la App para separar datos si fuera necesario
+const appId = 'auto-club-main'; 
 
 try {
-  const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-  const firebaseConfig = JSON.parse(configStr);
-  if (Object.keys(firebaseConfig).length > 0) {
+  let firebaseConfig = null;
+
+  // 1. Intenta leer configuración inyectada (Entorno de Desarrollo)
+  if (typeof __firebase_config !== 'undefined') {
+      firebaseConfig = JSON.parse(__firebase_config);
+  } 
+  // 2. Intenta leer configuración de Vercel (Variables de Entorno)
+  else if (import.meta.env.VITE_FIREBASE_CONFIG) {
+      firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+  }
+
+  // Inicializar si existe configuración
+  if (firebaseConfig && Object.keys(firebaseConfig).length > 0) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+    console.log("✅ Conexión a Nube Iniciada");
+  } else {
+    console.log("⚠️ No se encontraron credenciales. Iniciando Modo Local.");
   }
 } catch (e) {
-  console.log("Modo Local Activado");
+  console.error("Error inicializando Firebase:", e);
 }
 
 // --- ICONOS ---
@@ -49,7 +64,7 @@ const Icons = {
   Download: ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
 };
 
-// --- CONFIGURACIÓN SLA ---
+// --- CONFIGURACIÓN SLA (26 DÍAS TOTAL) ---
 const STAGE_CONFIG = [
   { id: 'contact', label: "Fecha 1er Contacto", days: 0 }, 
   { id: 'visit', label: "Fecha de Visita", days: 3 },
@@ -148,7 +163,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState(""); 
   const [stageModal, setStageModal] = useState(null); 
 
-  // 1. CARGA Y AUTO-REPARACIÓN DE DATOS (ANTI-CRASH)
+  // 1. CARGA Y AUTO-REPARACIÓN DE DATOS
   useEffect(() => {
     const repairData = (data) => {
         if (!Array.isArray(data)) return [];
@@ -212,7 +227,7 @@ export default function App() {
             setLoading(false);
         }, (error) => { console.error(error); setLoading(false); });
         return () => unsubscribe();
-    } else if (!isOnlineMode && !loading) { // CORRECCIÓN CRÍTICA: SOLO GUARDAR SI NO ESTÁ CARGANDO
+    } else if (!isOnlineMode && !loading) { 
         localStorage.setItem('autoflow_db_v1', JSON.stringify(clients));
     }
   }, [user, clients, isOnlineMode, loading]);
@@ -439,7 +454,7 @@ export default function App() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v5.2)</h3>
+            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v5.3)</h3>
             {STAGE_CONFIG.map((stage, index) => {
               const currentDateStr = clientStages[stage.id] || "";
               const isCompleted = !!currentDateStr;
@@ -618,7 +633,7 @@ export default function App() {
       <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-3 font-bold text-lg"><img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-full bg-white p-0.5" /><span>Workflow Auto Club</span></div>
-          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v5.2 (Corrección Guardado)</div>
+          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v5.3 (Sincronización Lista)</div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <button type="button" onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${view === 'form' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
