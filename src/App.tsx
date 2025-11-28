@@ -1,41 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
-// --- CONFIGURACIÓN INTELIGENTE (SOPORTE VERCEL) ---
+// ====================================================================================
+// 🔴 🔴 🔴  ZONA DE CONFIGURACIÓN - PEGA AQUÍ TUS CÓDIGOS DE FIREBASE  🔴 🔴 🔴
+// ====================================================================================
+
+const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "autoclub-adj.firebaseapp.com",
+  projectId: "autoclub-adj",
+  storageBucket: "autoclub-adj.firebasestorage.app",
+  messagingSenderId: "...",
+  appId: "..."
+};
+
+// ====================================================================================
+// 🔴 🔴 🔴                 FIN DE LA ZONA DE CONFIGURACIÓN             🔴 🔴 🔴
+// ====================================================================================
+
 let app = null;
 let auth = null;
 let db = null;
+const appId = 'auto-club-main';
 
-// ID de la App para separar datos si fuera necesario
-const appId = 'auto-club-main'; 
-
+// INICIALIZACIÓN SEGURA
 try {
-  let firebaseConfig = null;
-
-  // 1. Intenta leer configuración inyectada (Entorno de Desarrollo)
-  if (typeof __firebase_config !== 'undefined') {
-      firebaseConfig = JSON.parse(__firebase_config);
-  } 
-  // 2. Intenta leer configuración de Vercel (Variables de Entorno)
-  else if (import.meta.env.VITE_FIREBASE_CONFIG) {
-      firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
-  }
-
-  // Inicializar si existe configuración
-  if (firebaseConfig && Object.keys(firebaseConfig).length > 0) {
+  // Verificamos si el usuario ya pegó la configuración (si tiene apiKey)
+  if (firebaseConfig && firebaseConfig.apiKey) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-    console.log("✅ Conexión a Nube Iniciada");
+    console.log("✅ CONECTADO A LA NUBE (FIREBASE)");
   } else {
-    console.log("⚠️ No se encontraron credenciales. Iniciando Modo Local.");
+    console.log("⚠️ AÚN NO HAS PEGADO LA LLAVE DE FIREBASE. El sistema funcionará en Modo Local.");
   }
 } catch (e) {
-  console.error("Error inicializando Firebase:", e);
+  console.error("Error al conectar:", e);
 }
+
 
 // --- ICONOS ---
 const Icons = {
@@ -162,75 +167,51 @@ export default function App() {
   const [emailData, setEmailData] = useState(null);
   const [searchTerm, setSearchTerm] = useState(""); 
   const [stageModal, setStageModal] = useState(null); 
+  const [isLoaded, setIsLoaded] = useState(false); 
 
-  // 1. CARGA Y AUTO-REPARACIÓN DE DATOS
+  // 1. CARGA DE DATOS E INICIO DE SESIÓN ANÓNIMA
   useEffect(() => {
-    const repairData = (data) => {
-        if (!Array.isArray(data)) return [];
-        return data.map(c => ({
-            ...c,
-            stages: c.stages || {},
-            attachments: c.attachments || {},
-            clientCode: c.clientCode || '',
-            city: c.city || '',
-            adjudicationType: c.adjudicationType || 'Sorteo'
-        }));
-    };
-
-    if (auth && db) {
-        setIsOnlineMode(true);
-        const initAuth = async () => {
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-          } else {
-            await signInAnonymously(auth);
-          }
-        };
-        initAuth();
-        const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
-        return () => unsubscribe();
-    } else {
-        setIsOnlineMode(false);
-        const saved = localStorage.getItem('autoflow_db_v1');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                setClients(repairData(parsed));
-            } catch (e) {
-                setClients([]);
-            }
+    const initData = async () => {
+        // Si ya pusiste la KEY de Firebase en la linea 10
+        if (firebaseConfig && firebaseConfig.apiKey) {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            await signInAnonymously(auth); // Inicio de sesión anónimo automático
+            onAuthStateChanged(auth, u => setUser(u));
+            setIsOnlineMode(true);
         } else {
-            setClients([]);
+            // Si no hay key, usar localStorage con protección
+            setIsOnlineMode(false);
+            const saved = localStorage.getItem('autoflow_db_v1');
+            if (saved) {
+                try { setClients(JSON.parse(saved)); } catch (e) { setClients([]); }
+            }
+            setIsLoaded(true); 
         }
         setLoading(false);
-    }
+    };
+    initData();
   }, []);
 
-  // 2. SINCRONIZACIÓN BD
+  // 2. SINCRONIZACIÓN NUBE (REALTIME)
   useEffect(() => {
-    if (isOnlineMode && user && db) {
-        const q = collection(db, 'artifacts', appId, 'public', 'data', 'clients');
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const clientsData = snapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    id: doc.id,
-                    ...data,
-                    stages: data.stages || {},
-                    attachments: data.attachments || {},
-                    clientCode: data.clientCode || '',
-                    city: data.city || '',
-                    adjudicationType: data.adjudicationType || 'Sorteo'
-                };
-            });
-            setClients(clientsData); 
-            setLoading(false);
-        }, (error) => { console.error(error); setLoading(false); });
-        return () => unsubscribe();
-    } else if (!isOnlineMode && !loading) { 
+    if (isOnlineMode && db) {
+        const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), (snap) => {
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setClients(data);
+            setIsLoaded(true);
+        });
+        return () => unsub();
+    }
+  }, [isOnlineMode]);
+
+  // 3. GUARDADO LOCAL (SOLO SI NO HAY NUBE Y YA CARGÓ)
+  useEffect(() => {
+    if (!isOnlineMode && isLoaded) {
         localStorage.setItem('autoflow_db_v1', JSON.stringify(clients));
     }
-  }, [user, clients, isOnlineMode, loading]);
+  }, [clients, isOnlineMode, isLoaded]);
 
   const loadDemoData = async () => {
     const demoClients = [
@@ -240,7 +221,8 @@ export default function App() {
     if (isOnlineMode && db) {
         for (const client of demoClients) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), { ...client, createdAt: new Date().toISOString() });
     } else {
-        setClients([...clients, ...demoClients.map((c, i) => ({ ...c, id: `demo-${Date.now()}-${i}` }))]);
+        const newClients = demoClients.map((c, i) => ({ ...c, id: `demo-${Date.now()}-${i}` }));
+        setClients(prev => [...prev, ...newClients]);
     }
     alert("Datos de prueba cargados.");
   };
@@ -263,7 +245,7 @@ export default function App() {
         };
 
         if (isOnlineMode && db) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), newClient);
-        else setClients([...clients, { ...newClient, id: Date.now().toString() }]);
+        else setClients(prev => [...prev, { ...newClient, id: Date.now().toString() }]);
         setView('list');
     } catch(error) {
         console.error("Error al agregar cliente:", error);
@@ -301,7 +283,7 @@ export default function App() {
   const deleteClient = async (clientId) => {
     if(!confirm("¿Estás seguro?")) return;
     if (isOnlineMode && db) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId));
-    else setClients(clients.filter(c => c.id !== clientId));
+    else setClients(prev => prev.filter(c => c.id !== clientId));
     if (selectedClient?.id === clientId) setView('list');
   };
 
@@ -454,7 +436,7 @@ export default function App() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v5.3)</h3>
+            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Icons.Timer className="w-5 h-5 text-blue-500" /> Desglose por Etapa (v6.0)</h3>
             {STAGE_CONFIG.map((stage, index) => {
               const currentDateStr = clientStages[stage.id] || "";
               const isCompleted = !!currentDateStr;
@@ -633,7 +615,7 @@ export default function App() {
       <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col">
         <div className="p-6 border-b border-slate-800">
           <div className="flex items-center gap-3 font-bold text-lg"><img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-full bg-white p-0.5" /><span>Workflow Auto Club</span></div>
-          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v5.3 (Sincronización Lista)</div>
+          <div className="mt-2 text-xs font-mono text-slate-500 text-center border border-slate-700 rounded p-1">v6.0 (Final)</div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <button type="button" onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${view === 'form' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
@@ -652,11 +634,14 @@ export default function App() {
           </button>
         </nav>
         <div className="p-4 border-t border-slate-800 text-xs text-slate-500 flex items-center gap-2">
-            {isOnlineMode ? <><Icons.Cloud className="w-3 h-3 text-emerald-400"/> Conectado (Nube)</> : <><Icons.WifiOff className="w-3 h-3 text-amber-400"/> Modo Local</>}
+            {isOnlineMode ? <><Icons.Cloud className="w-3 h-3 text-emerald-400"/> Conectado (Nube)</> : 
+            <div className="w-full">
+                <div className="flex items-center gap-2 text-amber-400 mb-2"><Icons.WifiOff className="w-3 h-3"/> Modo Local</div>
+                <button onClick={() => setShowConfigModal(true)} className="w-full bg-slate-800 text-white text-xs py-1.5 rounded hover:bg-slate-700 border border-slate-700 transition">⚙️ Configurar Nube</button>
+            </div>}
         </div>
       </aside>
       <main className="flex-1 overflow-y-auto h-screen flex flex-col">
-        {/* GLOBAL TOP BAR WITH SEARCH */}
         <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between">
           <div className="flex items-center flex-1 max-w-xl gap-4">
               <div className="font-bold text-slate-800 md:hidden">Workflow Auto Club</div>
@@ -699,6 +684,7 @@ export default function App() {
         </div>
       </main>
       
+      {/* MODALES */}
       {showEmailModal && emailData && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in">
@@ -707,12 +693,30 @@ export default function App() {
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Para:</label><div className="bg-slate-50 border border-slate-200 rounded p-2 text-sm text-slate-700">{emailData.to}</div></div>
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asunto:</label><div className="bg-slate-50 border border-slate-200 rounded p-2 text-sm text-slate-700 font-medium">{emailData.subject}</div></div>
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mensaje:</label><div className="bg-slate-50 border border-slate-200 rounded p-3 text-sm text-slate-600 whitespace-pre-line h-40 overflow-y-auto">{emailData.body}</div></div>
-              <div className="bg-amber-50 border border-amber-100 rounded p-3 text-xs text-amber-700 flex gap-2 items-start"><Icons.AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5"/><span>Recuerda adjuntar manualmente la imagen o comprobante antes de enviar el correo desde tu aplicación de email.</span></div>
             </div>
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3"><button onClick={() => setShowEmailModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition">Cancelar</button><button onClick={sendEmail} className="px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition flex items-center gap-2">Abrir en Gmail y Enviar <Icons.ChevronRight className="w-4 h-4"/></button></div>
           </div>
         </div>
       )}
+      
+      {showConfigModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden p-6">
+                <h3 className="text-lg font-bold mb-4">Configurar Nube (Firebase)</h3>
+                <p className="text-sm text-slate-500 mb-4">Pega aquí el JSON de configuración de tu proyecto Firebase para activar la sincronización en tiempo real.</p>
+                <textarea 
+                    className="w-full h-32 border p-2 text-xs font-mono mb-4" 
+                    placeholder='{"apiKey": "...", "authDomain": "...", ...}'
+                    id="firebaseConfigInput"
+                ></textarea>
+                <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowConfigModal(false)} className="px-4 py-2 text-sm border rounded">Cancelar</button>
+                    <button onClick={() => saveFirebaseConfig(document.getElementById('firebaseConfigInput').value)} className="px-4 py-2 text-sm bg-blue-600 text-white rounded">Guardar y Recargar</button>
+                </div>
+            </div>
+        </div>
+      )}
+      
       {stageModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in max-h-[80vh] flex flex-col">
