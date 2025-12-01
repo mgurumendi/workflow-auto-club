@@ -25,7 +25,8 @@ import {
   getDocs 
 } from 'firebase/firestore';
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend 
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
 import { 
   CheckCircle, Circle, Clock, Car, Search, AlertCircle, 
@@ -33,7 +34,8 @@ import {
   Users, Plus, FileText, Truck, ArrowLeft, PieChart as PieChartIcon, 
   Timer, AlertTriangle, Trash2, Cloud, WifiOff, Mail, X, Paperclip, 
   Eye, TrendingUp, Download, DollarSign, Wifi, RefreshCw, Globe, 
-  Info, HelpCircle, Lock, UserCheck, Key, LogOut, User as UserIcon, Building
+  Info, HelpCircle, Lock, UserCheck, Key, LogOut, User as UserIcon, Building,
+  BarChart2
 } from 'lucide-react';
 
 // ====================================================================================
@@ -56,8 +58,8 @@ const db = getFirestore(app);
 
 // Configuración de etapas (Debe coincidir con la del CRM)
 const STAGE_CONFIG = [
-  { id: 'contact', label: "Registro y Contacto", days: 0 }, 
-  { id: 'visit', label: "Visita Comercial", days: 3 },
+  { id: 'contact', label: "Fecha 1er Contacto", days: 0 }, 
+  { id: 'visit', label: "Fecha de Visita", days: 3 },
   { id: 'docs', label: "Entrega Doc. y Pagos", days: 3 },
   { id: 'approval', label: "Aprobación de Compra", days: 3 },
   { id: 'order_emit', label: "Emisión Orden de Compra", days: 2 },
@@ -134,18 +136,20 @@ function ClientPortal() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
   const [cedula, setCedula] = useState('');
   const [code, setCode] = useState('');
   const [clientData, setClientData] = useState(null);
 
   useEffect(() => {
-    // Intenta conectar inmediatamente al cargar
+    // Intenta conectar silenciosamente al cargar
     const initAuth = async () => {
       if (!auth.currentUser) {
         try {
           await signInAnonymously(auth);
         } catch (err) {
-          console.error("Error de conexión inicial:", err);
+          console.warn("Autenticación anónima automática falló:", err);
+          setDebugInfo(err.message);
         }
       }
     };
@@ -154,7 +158,7 @@ function ClientPortal() {
     const unsubscribe = onAuthStateChanged(auth, (u) => { 
       if (u) {
         setUser(u);
-        setError(''); // Limpia errores previos si conecta exitosamente
+        setDebugInfo('');
       }
     });
     return () => unsubscribe();
@@ -164,22 +168,16 @@ function ClientPortal() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setDebugInfo('');
     setClientData(null);
 
-    // 1. Verificación robusta de autenticación
-    let currentUser = user || auth.currentUser;
-
-    if (!currentUser) {
+    // 1. Intento de autenticación (NO BLOQUEANTE)
+    if (!auth.currentUser) {
       try {
-        // Intento de reconexión forzada
-        const result = await signInAnonymously(auth);
-        currentUser = result.user;
-        setUser(currentUser);
+        await signInAnonymously(auth);
       } catch (authErr) {
-        console.error(authErr);
-        setError("Error de conexión. Por favor verifique su internet o recargue la página.");
-        setLoading(false);
-        return;
+        console.error("Fallo Auth:", authErr);
+        setDebugInfo(`Auth Error: ${authErr.code}`);
       }
     }
 
@@ -204,7 +202,16 @@ function ClientPortal() {
       }
     } catch (err) {
       console.error(err);
-      setError("Hubo un error al buscar su información. Intente nuevamente.");
+      if (err.code === 'permission-denied') {
+        setError("Permiso denegado. Verifique las Reglas de Seguridad en Firestore.");
+        setDebugInfo(`DB Error: ${err.code}`);
+      } else if (err.code === 'unavailable') {
+        setError("Sin conexión con el servidor Firebase.");
+        setDebugInfo(`DB Error: ${err.code}`);
+      } else {
+        setError(`Error del sistema.`);
+        setDebugInfo(`DB Error: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -226,8 +233,9 @@ function ClientPortal() {
           <form onSubmit={handleSearch} className="space-y-4">
             <div><label className="block text-xs font-bold text-slate-500 mb-1">CÉDULA / RUC</label><input type="text" required className="w-full px-4 py-3 border rounded-lg text-sm bg-slate-50" placeholder="Ej: 0999999999" value={cedula} onChange={e => setCedula(e.target.value)}/></div>
             <div><label className="block text-xs font-bold text-slate-500 mb-1">CÓDIGO DE CLIENTE</label><input type="text" required className="w-full px-4 py-3 border rounded-lg text-sm bg-slate-50" placeholder="Ej: CLI-001" value={code} onChange={e => setCode(e.target.value)}/><p className="text-[10px] text-slate-400 mt-1">Este código fue proporcionado por su asesor.</p></div>
-            {error && <div className="bg-rose-50 text-rose-600 p-3 rounded text-xs flex items-start gap-2 border border-rose-100"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0"/><span>{error}</span></div>}
-            <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition disabled:opacity-50 flex justify-center items-center gap-2">{loading ? 'Buscando...' : <><Search className="w-4 h-4"/> Consultar Estado</>}</button>
+            {error && <div className="bg-rose-50 text-rose-600 p-3 rounded text-xs flex flex-col gap-1 border border-rose-100"><div className="flex items-start gap-2 font-bold"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0"/><span>{error}</span></div>{debugInfo && <div className="text-[10px] font-mono opacity-80 break-all bg-rose-100 p-1 rounded">{debugInfo}</div>}</div>}
+            {!error && debugInfo && <div className="bg-amber-50 text-amber-600 p-2 rounded text-[10px] font-mono border border-amber-100 break-all"><span className="font-bold">Info Técnica:</span> {debugInfo}</div>}
+            <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 transition disabled:opacity-50 flex justify-center items-center gap-2">{loading ? 'Conectando...' : <><Search className="w-4 h-4"/> Consultar Estado</>}</button>
           </form>
         </div>
       </div>
@@ -292,10 +300,14 @@ function ClientPortal() {
 
 function AdminCRM({ onBack }) {
   const [view, setView] = useState('dashboard');
-  const [selectedClient, setSelectedClient] = useState(null);
+  const [selectedClientId, setSelectedClientId] = useState(null);
   const [clients, setClients] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   
+  const selectedClient = useMemo(() => 
+    clients.find(c => c.id === selectedClientId) || null, 
+  [clients, selectedClientId]);
+
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null); 
   const [loading, setLoading] = useState(true);
@@ -316,7 +328,7 @@ function AdminCRM({ onBack }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (u && !u.isAnonymous) { // Ignorar usuarios anónimos (Portal Clientes)
+      if (u && !u.isAnonymous) { 
         setUser(u);
         setAuthError(null);
         await checkUserProfile(u);
@@ -354,7 +366,7 @@ function AdminCRM({ onBack }) {
 
   const handleLogout = async () => {
       await signOut(auth);
-      onBack(); // Volver al landing al salir
+      onBack(); 
   };
 
   const checkUserProfile = async (currentUser) => {
@@ -404,22 +416,51 @@ function AdminCRM({ onBack }) {
 
   const approveUser = async (targetUid) => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', `user_${targetUid}`), { status: 'approved' });
   const blockUser = async (targetUid) => { if(confirm("¿Bloquear?")) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', `user_${targetUid}`), { status: 'blocked' }); };
+  
+  // NUEVA FUNCION: Eliminar usuario
+  const deleteUser = async (targetUid) => { 
+      if(confirm("¿Estás seguro de eliminar este usuario? Perderá el acceso inmediatamente.")) {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', `user_${targetUid}`));
+      }
+  };
+
   const addClient = async (clientData) => {
     if (isWeekend(parseLocalDate(clientData.adjudicationDate))) { alert("Fecha no válida (Fin de semana)."); return; }
     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), { ...clientData, createdAt: new Date().toISOString(), stages: {}, attachments: {} });
     setView('list');
   };
+  
   const updateClientStage = async (clientId, stageId, date) => {
-    if (isWeekend(parseLocalDate(date))) { alert("Selecciona un día laborable."); return; }
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`stages.${stageId}`]: date });
+    // Permitir fines de semana solo para 'contact', para el resto validar
+    if (stageId !== 'contact' && isWeekend(parseLocalDate(date))) { 
+        alert("Selecciona un día laborable."); 
+        return; 
+    }
+    try {
+        const clientRef = doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId);
+        await updateDoc(clientRef, { [`stages.${stageId}`]: date });
+    } catch (e) {
+        console.error("Error al actualizar etapa:", e);
+        alert("Error al guardar la fecha.");
+    }
   };
+
   const uploadAttachment = async (clientId, stageId, file) => {
       if (file.size > 800000) { alert("Máximo 800KB"); return; }
       const reader = new FileReader();
       reader.onload = async (e) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`attachments.${stageId}`]: { name: file.name, type: file.type, data: e.target?.result, date: new Date().toISOString() } });
       reader.readAsDataURL(file);
   };
-  const deleteClient = async (clientId) => { if(confirm("¿Eliminar expediente?")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId)); if (selectedClient?.id === clientId) setView('list'); }};
+  
+  const deleteClient = async (clientId) => { 
+    if(confirm("¿Eliminar expediente?")) { 
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId)); 
+      if (selectedClientId === clientId) {
+        setView('list'); 
+        setSelectedClientId(null);
+      }
+    }
+  };
 
   const exportToExcel = () => {
     const headers = ["Código", "Nombre", "Cédula", "Ciudad", "Teléfono", "Tipo Adj.", "F. Inscripción", "F. Adjudicación", "Estado General", ...STAGE_CONFIG.map(s => s.label)];
@@ -469,13 +510,63 @@ function AdminCRM({ onBack }) {
     const totalDeliveryDays = deliveredClients.reduce((acc, c) => acc + getWorkingDays(c.adjudicationDate, c.stages.delivery), 0);
     const avgDeliveryTime = deliveredClients.length ? (totalDeliveryDays / deliveredClients.length).toFixed(1) : "0";
     const riskClients = clients.filter(c => !c.stages?.delivery && getWorkingDays(c.adjudicationDate, getTodayString()) > 15).length;
+    
+    // Cálculo de promedios por etapa
+    const performanceData = STAGE_CONFIG.map((stage, index) => {
+        // Excluir 'contact' del cálculo de rendimiento (Meta: 0, Promedio: 0)
+        if (stage.id === 'contact') return { name: stage.label, promedio: 0, meta: stage.days };
+
+        let totalDays = 0;
+        let count = 0;
+        
+        clients.forEach(c => {
+            const currentStageDateStr = c.stages?.[stage.id];
+            if (!currentStageDateStr) return;
+            
+            // Determinar fecha de inicio para esta etapa
+            let prevDateStr = null;
+            
+            if (index > 0) {
+                // La etapa anterior define el inicio
+                const prevStageId = STAGE_CONFIG[index - 1].id;
+                prevDateStr = c.stages?.[prevStageId];
+            } else {
+                // Si fuera la primera etapa (contact), usaríamos adjudicación o inscripción, 
+                // pero 'contact' está excluido arriba.
+                // Fallback por si acaso:
+                prevDateStr = c.adjudicationDate;
+            }
+
+            // Solo calcular si tenemos ambas fechas (Inicio y Fin de la etapa)
+            if (prevDateStr) {
+                const days = getWorkingDays(prevDateStr, currentStageDateStr);
+                // Filtrar valores absurdos (ej: fechas erróneas que den negativos o >100 días)
+                if (days >= 0 && days < 100) { 
+                    totalDays += days;
+                    count++;
+                }
+            }
+        });
+
+        return {
+            name: stage.label,
+            promedio: count > 0 ? parseFloat((totalDays / count).toFixed(1)) : 0,
+            meta: stage.days
+        };
+    });
+
+    // Suma de los promedios de todas las etapas (excluyendo contact que es 0)
+    const totalAvgTime = performanceData.reduce((acc, curr) => acc + curr.promedio, 0).toFixed(1);
+
     const pieData = [
         { name: 'A Tiempo', value: clients.filter(c => !c.stages?.delivery && getWorkingDays(c.adjudicationDate, getTodayString()) <= 15).length, color: '#10b981' },
         { name: 'Riesgo (>15d)', value: clients.filter(c => !c.stages?.delivery && getWorkingDays(c.adjudicationDate, getTodayString()) > 15 && getWorkingDays(c.adjudicationDate, getTodayString()) <= 20).length, color: '#f59e0b' },
         { name: 'Atrasados (>20d)', value: clients.filter(c => !c.stages?.delivery && getWorkingDays(c.adjudicationDate, getTodayString()) > 20).length, color: '#ef4444' }
     ].filter(d => d.value > 0);
+    
     const chartData = STAGE_CONFIG.slice(0, 8).map(stage => ({ id: stage.id, name: stage.label, completados: clients.filter(c => c.stages?.[stage.id]).length }));
-    return { totalClients, activeClients, deliveredClients, avgDeliveryTime, riskClients, pieData, chartData };
+    
+    return { totalClients, activeClients, deliveredClients, avgDeliveryTime: totalAvgTime, riskClients, pieData, chartData, performanceData };
   }, [clients]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400 flex-col gap-4"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div><span className="text-sm">Cargando Sistema...</span></div>;
@@ -556,15 +647,34 @@ function AdminCRM({ onBack }) {
       <main className="flex-1 overflow-y-auto h-screen flex flex-col p-4 md:p-8 max-w-7xl mx-auto w-full">
           {view === 'dashboard' && <div className="space-y-6 animate-fade-in">
               <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2><button onClick={exportToExcel} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm font-medium"><Download className="w-4 h-4"/> Exportar Excel</button></div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4"><Card className="p-5 border-l-4 border-l-blue-500"><div className="text-slate-500 text-sm">Clientes Activos</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.activeClients}</div></Card><Card className="p-5 border-l-4 border-l-amber-500"><div className="text-slate-500 text-sm">En Riesgo</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.riskClients}</div></Card><Card className="p-5 border-l-4 border-l-emerald-500"><div className="text-slate-500 text-sm">Entregados</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.deliveredClients.length}</div></Card><Card className="p-5 border-l-4 border-l-indigo-500"><div className="text-slate-500 text-sm">Tiempo Promedio</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.avgDeliveryTime}<span className="text-sm text-slate-400 font-normal ml-1">días</span></div></Card></div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4"><Card className="p-5 border-l-4 border-l-blue-500"><div className="text-slate-500 text-sm">Clientes Activos</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.activeClients}</div></Card><Card className="p-5 border-l-4 border-l-amber-500"><div className="text-slate-500 text-sm">En Riesgo</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.riskClients}</div></Card><Card className="p-5 border-l-4 border-l-emerald-500"><div className="text-slate-500 text-sm">Entregados</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.deliveredClients.length}</div></Card><Card className="p-5 border-l-4 border-l-indigo-500"><div className="text-slate-500 text-sm">Suma Promedio Etapas</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.avgDeliveryTime}<span className="text-sm text-slate-400 font-normal ml-1">días</span></div></Card></div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><Card className="p-6 col-span-1 flex flex-col"><h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-slate-500"/> Estado General</h3><div className="w-full h-64 relative flex-1">{dashboardStats.pieData.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={dashboardStats.pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{dashboardStats.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><RechartsTooltip /><Legend verticalAlign="bottom" /></PieChart></ResponsiveContainer>) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-center"><p className="text-slate-400 text-sm">No hay datos suficientes</p></div>)}</div></Card><Card className="p-6 col-span-1 lg:col-span-2"><h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-slate-500"/> Embudo de Conversión</h3><div className="space-y-4">{dashboardStats.chartData.map((d, i) => (<div key={i} className="group"><div className="flex justify-between text-xs mb-1"><span className="font-medium text-slate-600 cursor-pointer hover:text-blue-600 transition" onClick={() => setStageModal({ id: d.id, label: d.name, clients: clients.filter(c => c.stages?.[d.id]) })}>{d.name}</span><span className="font-bold text-slate-700">{d.completados}</span></div><div className="h-2.5 bg-slate-100 rounded-full overflow-hidden cursor-pointer" onClick={() => setStageModal({ id: d.id, label: d.name, clients: clients.filter(c => c.stages?.[d.id]) })}><div className="h-full bg-blue-500 rounded-full relative group-hover:bg-blue-600 transition-all duration-500" style={{ width: `${(d.completados / Math.max(dashboardStats.totalClients, 1)) * 100}%` }}></div></div></div>))}</div></Card></div>
+              {/* NUEVA GRÁFICA DE RENDIMIENTO POR ETAPAS */}
+              <div className="grid grid-cols-1">
+                  <Card className="p-6">
+                      <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><BarChart2 className="w-4 h-4 text-slate-500"/> Tiempo Promedio por Etapa vs Meta (SLA)</h3>
+                      <div className="w-full h-72">
+                          <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={dashboardStats.performanceData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} />
+                                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} label={{ value: 'Días', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }} />
+                                  <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                                  <Legend verticalAlign="top" height={36}/>
+                                  <Bar dataKey="promedio" name="Días Promedio Real" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                                  <Bar dataKey="meta" name="Meta (SLA)" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={20} />
+                              </BarChart>
+                          </ResponsiveContainer>
+                      </div>
+                  </Card>
+              </div>
           </div>}
 
           {view === 'admin_users' && userProfile?.role === 'admin' && (
-              <div className="space-y-6 animate-fade-in"><h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><UserCheck className="w-6 h-6 text-indigo-600"/> Gestión de Usuarios</h2><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Usuario</th><th className="px-6 py-4">Rol</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{pendingUsers.map(u => (<tr key={u.id} className="hover:bg-slate-50"><td className="px-6 py-4"><div className="font-bold text-slate-800">{u.displayName}</div><div className="text-xs text-slate-400 font-mono">{u.email}</div></td><td className="px-6 py-4"><Badge color={u.role === 'admin' ? 'blue' : 'slate'}>{u.role}</Badge></td><td className="px-6 py-4">{u.status === 'pending' ? <Badge color="amber">Pendiente</Badge> : u.status === 'approved' ? <Badge color="emerald">Aprobado</Badge> : <Badge color="rose">Bloqueado</Badge>}</td><td className="px-6 py-4 text-right flex justify-end gap-2">{u.status !== 'approved' && <button onClick={() => approveUser(u.uid)} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-200 font-bold transition">Aprobar</button>}{u.status !== 'blocked' && u.uid !== user?.uid && <button onClick={() => blockUser(u.uid)} className="text-xs bg-rose-100 text-rose-700 px-3 py-1 rounded hover:bg-rose-200 font-bold transition">Bloquear</button>}</td></tr>))}</tbody></table>{pendingUsers.length === 0 && <div className="p-8 text-center text-slate-400">No hay usuarios registrados.</div>}</div></div>
+              <div className="space-y-6 animate-fade-in"><h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><UserCheck className="w-6 h-6 text-indigo-600"/> Gestión de Usuarios</h2><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Usuario</th><th className="px-6 py-4">Rol</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{pendingUsers.map(u => (<tr key={u.id} className="hover:bg-slate-50"><td className="px-6 py-4"><div className="font-bold text-slate-800">{u.displayName}</div><div className="text-xs text-slate-400 font-mono">{u.email}</div></td><td className="px-6 py-4"><Badge color={u.role === 'admin' ? 'blue' : 'slate'}>{u.role}</Badge></td><td className="px-6 py-4">{u.status === 'pending' ? <Badge color="amber">Pendiente</Badge> : u.status === 'approved' ? <Badge color="emerald">Aprobado</Badge> : <Badge color="rose">Bloqueado</Badge>}</td><td className="px-6 py-4 text-right flex justify-end gap-2 items-center">{u.status !== 'approved' && <button onClick={() => approveUser(u.uid)} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-200 font-bold transition">Aprobar</button>}{u.status !== 'blocked' && u.uid !== user?.uid && <button onClick={() => blockUser(u.uid)} className="text-xs bg-amber-100 text-amber-700 px-3 py-1 rounded hover:bg-amber-200 font-bold transition">Bloquear</button>}{u.uid !== user?.uid && <button onClick={() => deleteUser(u.uid)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded transition border border-transparent hover:border-rose-200" title="Eliminar Usuario"><Trash2 className="w-4 h-4"/></button>}</td></tr>))}</tbody></table>{pendingUsers.length === 0 && <div className="p-8 text-center text-slate-400">No hay usuarios registrados.</div>}</div></div>
           )}
 
-          {view === 'list' && <div className="space-y-4 animate-fade-in"><div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Listado de Clientes</h2><div className="flex gap-2"><button onClick={exportToExcel} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm font-medium"><Download className="w-4 h-4"/> Excel</button><button onClick={() => setView('form')} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2"><Plus className="w-4 h-4" /> Nuevo</button></div></div><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-4 border-b border-slate-100 bg-slate-50/50"><div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input type="text" placeholder="Buscar..." className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div></div><div className="overflow-x-auto"><table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">F. Adjudicación</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(client => (<tr key={client.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedClient(client); setView('detail'); }}><td className="px-6 py-4 font-bold text-slate-800">{client.name}</td><td className="px-6 py-4">{client.adjudicationDate}</td><td className="px-6 py-4">{client.stages?.delivery ? <Badge color="emerald">Entregado</Badge> : <Badge color="blue">En Curso</Badge>}</td><td className="px-6 py-4 text-right"><ChevronRight className="w-5 h-5 text-slate-400 inline"/></td></tr>))}</tbody></table></div></div></div>}
+          {view === 'list' && <div className="space-y-4 animate-fade-in"><div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Listado de Clientes</h2><div className="flex gap-2"><button onClick={exportToExcel} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm font-medium"><Download className="w-4 h-4"/> Excel</button><button onClick={() => setView('form')} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2"><Plus className="w-4 h-4" /> Nuevo</button></div></div><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-4 border-b border-slate-100 bg-slate-50/50"><div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input type="text" placeholder="Buscar..." className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div></div><div className="overflow-x-auto"><table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">F. Adjudicación</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(client => (<tr key={client.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedClientId(client.id); setView('detail'); }}><td className="px-6 py-4 font-bold text-slate-800">{client.name}</td><td className="px-6 py-4">{client.adjudicationDate}</td><td className="px-6 py-4">{client.stages?.delivery ? <Badge color="emerald">Entregado</Badge> : <Badge color="blue">En Curso</Badge>}</td><td className="px-6 py-4 text-right"><ChevronRight className="w-5 h-5 text-slate-400 inline"/></td></tr>))}</tbody></table></div></div></div>}
 
           {view === 'form' && <div className="max-w-2xl mx-auto animate-fade-in"><button onClick={() => setView('dashboard')} className="flex items-center text-slate-500 mb-6 hover:text-blue-600"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-8 border-t-4 border-t-blue-600"><h2 className="text-2xl font-bold text-slate-800 mb-6">Nuevo Ingreso</h2><form onSubmit={(e) => { e.preventDefault(); addClient({ name: e.target.name.value, cedula: e.target.cedula.value, phone: e.target.phone.value, clientCode: e.target.clientCode.value, city: e.target.city.value, adjudicationType: e.target.type.value, inscriptionDate: e.target.inscription.value, adjudicationDate: e.target.adjudication.value }); }}><div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><input name="name" required placeholder="Nombre Completo" className="p-2 border rounded" /><input name="cedula" required placeholder="Cédula/RUC" className="p-2 border rounded" /><input name="phone" required placeholder="Teléfono" className="p-2 border rounded" /><input name="clientCode" required placeholder="Código Cliente" className="p-2 border rounded" /><input name="city" required placeholder="Ciudad" className="p-2 border rounded" /><select name="type" className="p-2 border rounded bg-white"><option value="Sorteo">Sorteo</option><option value="Oferta">Oferta</option></select><div className="md:col-span-2 grid grid-cols-2 gap-6"><div className="space-y-1"><label className="text-xs font-bold text-slate-500">F. Inscripción</label><input name="inscription" required type="date" className="w-full p-2 border rounded" /></div><div className="space-y-1"><label className="text-xs font-bold text-slate-500">F. Adjudicación</label><input name="adjudication" required type="date" className="w-full p-2 border rounded" /></div></div></div><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 font-bold">Guardar</button></form></Card></div>}
 
@@ -587,7 +697,7 @@ function AdminCRM({ onBack }) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]">
                 <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-lg text-slate-800">Detalle: {stageModal.label}</h3><button onClick={() => setStageModal(null)} className="text-slate-400 hover:text-slate-600 transition"><X className="w-5 h-5"/></button></div>
-                <div className="p-0 overflow-y-auto flex-1">{stageModal.clients.length === 0 ? (<div className="flex flex-col items-center justify-center py-12 text-slate-400"><Users className="w-12 h-12 mb-2 opacity-20"/><p>No hay clientes en esta etapa.</p></div>) : (<table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-xs border-b border-slate-200 sticky top-0"><tr><th className="px-6 py-3">Cliente</th><th className="px-6 py-3">Fecha Etapa</th><th className="px-6 py-3 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{stageModal.clients.map((client) => (<tr key={client.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedClient(client); setView('detail'); setStageModal(null); }}><td className="px-6 py-3"><div className="font-medium text-slate-800">{client.name}</div><div className="text-xs text-slate-400">{client.clientCode}</div></td><td className="px-6 py-3 font-mono text-xs">{client.stages[stageModal.id]}</td><td className="px-6 py-3 text-right"><span className="text-blue-600 font-medium text-xs hover:underline">Ver</span></td></tr>))}</tbody></table>)}</div>
+                <div className="p-0 overflow-y-auto flex-1">{stageModal.clients.length === 0 ? (<div className="flex flex-col items-center justify-center py-12 text-slate-400"><Users className="w-12 h-12 mb-2 opacity-20"/><p>No hay clientes en esta etapa.</p></div>) : (<table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-xs border-b border-slate-200 sticky top-0"><tr><th className="px-6 py-3">Cliente</th><th className="px-6 py-3">Fecha Etapa</th><th className="px-6 py-3 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{stageModal.clients.map((client) => (<tr key={client.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedClientId(client.id); setView('detail'); setStageModal(null); }}><td className="px-6 py-3"><div className="font-medium text-slate-800">{client.name}</div><div className="text-xs text-slate-400">{client.clientCode}</div></td><td className="px-6 py-3 font-mono text-xs">{client.stages[stageModal.id]}</td><td className="px-6 py-3 text-right"><span className="text-blue-600 font-medium text-xs hover:underline">Ver</span></td></tr>))}</tbody></table>)}</div>
                 <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 text-right"><button onClick={() => setStageModal(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition">Cerrar</button></div>
             </div>
         </div>
