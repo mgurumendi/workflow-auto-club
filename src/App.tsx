@@ -639,20 +639,19 @@ function AdminCRM({ onBack }) {
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest px-4 py-2">Menu Principal</div>
-          {/* CAMBIO: Botones activos ahora son BLANCOS (bg-white) */}
-          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'dashboard' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><PieChartIcon className="w-5 h-5" /> <span>Dashboard</span></button>
-          <button onClick={() => setView('list')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'list' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><Users className="w-5 h-5" /> <span>Clientes</span></button>
-          <button onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'form' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><Plus className="w-5 h-5" /> <span>Nuevo Ingreso</span></button>
+          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'dashboard' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><PieChartIcon className="w-5 h-5" /> <span>Dashboard</span></button>
+          <button onClick={() => setView('list')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'list' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><Users className="w-5 h-5" /> <span>Clientes</span></button>
+          <button onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'form' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><Plus className="w-5 h-5" /> <span>Nuevo Ingreso</span></button>
           {userProfile?.role === 'admin' && (
               <>
                 <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest px-4 py-2 mt-4">Administración</div>
-                <button onClick={() => setView('admin_users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'admin_users' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><UserCheck className="w-5 h-5" /> <span>Usuarios</span>{pendingUsers.filter(u => u.status === 'pending').length > 0 && (<span className="bg-rose-500 text-white text-[10px] px-1.5 rounded-full ml-auto">{pendingUsers.filter(u => u.status === 'pending').length}</span>)}</button>
+                <button onClick={() => setView('admin_users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'admin_users' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><UserCheck className="w-5 h-5" /> <span>Usuarios</span>{pendingUsers.filter(u => u.status === 'pending').length > 0 && (<span className="bg-rose-500 text-white text-[10px] px-1.5 rounded-full ml-auto">{pendingUsers.filter(u => u.status === 'pending').length}</span>)}</button>
               </>
           )}
         </nav>
         <div className="p-4 border-t border-yellow-500">
              <div className="flex items-center gap-3 mb-3"><div className="w-8 h-8 rounded-full bg-yellow-600 flex items-center justify-center text-xs font-bold text-slate-900 uppercase shadow-sm">{user.displayName ? user.displayName.substring(0,2) : 'US'}</div><div className="flex-1 overflow-hidden"><div className="text-xs font-bold text-slate-900 truncate">{user.displayName || 'Usuario'}</div><div className="text-[10px] text-slate-700 truncate">{userProfile?.role === 'admin' ? 'Administrador' : 'Usuario'}</div></div></div>
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-xs text-slate-800 hover:bg-white/50 py-2 rounded transition border border-yellow-600/30 font-medium"><LogOut className="w-3 h-3"/> Salir</button>
+             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-xs text-slate-700 hover:bg-yellow-300 hover:text-slate-900 py-2 rounded transition border border-yellow-600/30"><LogOut className="w-3 h-3"/> Salir</button>
         </div>
       </aside>
 
@@ -771,7 +770,6 @@ export default function App() {
             {/* Card: Client */}
             <button 
               onClick={() => setCurrentApp('client')}
-              // CAMBIO: Fondo Blanco
               className="group relative bg-white border-2 border-slate-100 p-8 rounded-3xl hover:border-yellow-400 hover:shadow-xl hover:shadow-yellow-400/20 transition-all duration-300 text-left w-full overflow-hidden"
             >
               <div className="relative z-10 flex items-center gap-6">
@@ -791,20 +789,18 @@ export default function App() {
             {/* Card: Admin */}
             <button 
               onClick={() => setCurrentApp('admin')}
-              // CAMBIO: Fondo Blanco en lugar de Slate-900 para consistencia
-              className="group relative bg-white border-2 border-slate-200 p-8 rounded-3xl hover:border-slate-900 hover:shadow-xl text-left w-full overflow-hidden"
+              className="group relative bg-slate-900 border-2 border-slate-900 p-8 rounded-3xl hover:bg-slate-800 transition-all duration-300 hover:shadow-xl text-left w-full overflow-hidden"
             >
               <div className="relative z-10 flex items-center gap-6">
-                {/* CAMBIO: Colores invertidos para mantener contraste en fondo blanco */}
-                <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center group-hover:bg-slate-800 transition-colors duration-300">
-                  <Building className="w-8 h-8 text-white transition-colors" />
+                <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center group-hover:bg-white transition-colors duration-300">
+                  <Building className="w-8 h-8 text-white group-hover:text-slate-900 transition-colors" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-900">Corporativo</h3>
-                  <p className="text-slate-500 font-medium group-hover:text-slate-600">Acceso Administrativo</p>
+                  <h3 className="text-2xl font-bold text-white">Corporativo</h3>
+                  <p className="text-slate-400 font-medium group-hover:text-slate-300">Acceso Administrativo</p>
                 </div>
                 <div className="ml-auto">
-                  <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-900 transition-colors" />
+                  <ChevronRight className="w-6 h-6 text-slate-600 group-hover:text-white transition-colors" />
                 </div>
               </div>
             </button>
