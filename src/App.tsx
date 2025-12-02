@@ -778,7 +778,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-slate-900">Soy Cliente</h3>
-                  <p className="text-slate-500 font-medium group-hover:text-slate-600">Consultar estado de trámite</p>
+                  <p className="text-slate-500 font-medium group-hover:text-slate-600">Consultar proceso de compra</p>
                 </div>
                 <div className="ml-auto">
                   <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-900 transition-colors" />
