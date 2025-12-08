@@ -316,7 +316,146 @@ function ClientPortal() {
 }
 
 // ====================================================================================
-// 🛠️ COMPONENTE: ADMIN CRM (COMPLETO)
+// 🛠️ SUB-COMPONENTES DEL ADMIN CRM
+// ====================================================================================
+
+const DashboardView = ({ stats, setStageModal, clients }) => (
+  <div className="space-y-6 animate-fade-in">
+    <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2></div>
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <Card className="p-5 border-l-4 border-l-slate-900"><div className="text-slate-500 text-sm">Clientes Activos</div><div className="text-3xl font-bold text-slate-800">{stats.activeClients}</div></Card>
+      <Card className="p-5 border-l-4 border-l-yellow-500"><div className="text-slate-500 text-sm">En Riesgo</div><div className="text-3xl font-bold text-slate-800">{stats.riskClients}</div></Card>
+      <Card className="p-5 border-l-4 border-l-emerald-500"><div className="text-slate-500 text-sm">Entregados</div><div className="text-3xl font-bold text-slate-800">{stats.deliveredClients.length}</div></Card>
+      <Card className="p-5 border-l-4 border-l-slate-500"><div className="text-slate-500 text-sm">Suma Promedio Etapas</div><div className="text-3xl font-bold text-slate-800">{stats.avgDeliveryTime}<span className="text-sm text-slate-400 font-normal ml-1">días</span></div></Card>
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <Card className="p-6 col-span-1 flex flex-col">
+        <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-slate-500"/> Estado General</h3>
+        <div className="w-full h-64 relative flex-1">
+          {stats.pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={stats.pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                  {stats.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                </Pie>
+                <RechartsTooltip />
+                <Legend verticalAlign="bottom" />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-center"><p className="text-slate-400 text-sm">No hay datos suficientes</p></div>)}
+        </div>
+      </Card>
+      <Card className="p-6 col-span-1 lg:col-span-2">
+        <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-slate-500"/> Embudo de Conversión</h3>
+        <div className="space-y-4 overflow-y-auto max-h-80 pr-2">
+          {stats.chartData.map((d, i) => (
+            <div key={i} className="group">
+              <div className="flex justify-between text-xs mb-1">
+                <span className="font-medium text-slate-600 cursor-pointer hover:text-slate-900 transition" onClick={() => setStageModal({ id: d.id, label: d.name, clients: clients.filter(c => c.stages?.[d.id]) })}>{d.name}</span>
+                <span className="font-bold text-slate-700">{d.completados}</span>
+              </div>
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden cursor-pointer" onClick={() => setStageModal({ id: d.id, label: d.name, clients: clients.filter(c => c.stages?.[d.id]) })}>
+                <div className="h-full bg-slate-900 rounded-full relative group-hover:bg-yellow-500 transition-all duration-500" style={{ width: `${(d.completados / Math.max(stats.totalClients, 1)) * 100}%` }}></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+    <div className="grid grid-cols-1">
+      <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><BarChart2 className="w-4 h-4 text-slate-500"/> Tiempo Promedio por Etapa vs Meta (SLA)</h3>
+          <div className="w-full h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.performanceData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{fontSize: 9, fill: '#64748b'}} 
+                        interval={0} // Muestra todas las etiquetas
+                        angle={-45}  // Rota las etiquetas para que quepan
+                        textAnchor="end" 
+                        height={80} // Aumenta la altura para las etiquetas rotadas
+                      />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} label={{ value: 'Días', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }} />
+                      <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                      <Legend verticalAlign="top" height={36}/>
+                      
+                      {/* BARRA DE PROMEDIO REAL (Con colores condicionales) */}
+                      <Bar dataKey="promedio" name="Días Promedio Real" radius={[4, 4, 0, 0]} barSize={20}>
+                        {
+                          stats.performanceData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.promedio > entry.meta ? '#ef4444' : '#22c55e'} />
+                          ))
+                        }
+                      </Bar>
+
+                      {/* BARRA DE META (SLA) - Fija en Gris */}
+                      <Bar dataKey="meta" name="Meta (SLA)" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={20} />
+                  </BarChart>
+              </ResponsiveContainer>
+          </div>
+      </Card>
+    </div>
+  </div>
+);
+
+const UserListView = ({ users, onApprove, onBlock, currentUserUid }) => (
+  <div className="space-y-6 animate-fade-in">
+    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><UserCheck className="w-6 h-6 text-slate-900"/> Gestión de Usuarios</h2>
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <table className="w-full text-left text-sm text-slate-600">
+        <thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Usuario</th><th className="px-6 py-4">Rol</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead>
+        <tbody className="divide-y divide-slate-100">
+          {users.map(u => (
+            <tr key={u.id} className="hover:bg-slate-50">
+              <td className="px-6 py-4"><div className="font-bold text-slate-800">{u.displayName}</div><div className="text-xs text-slate-400 font-mono">{u.email}</div></td>
+              <td className="px-6 py-4"><Badge color={u.role === 'admin' ? 'black' : 'slate'}>{u.role}</Badge></td>
+              <td className="px-6 py-4">{u.status === 'pending' ? <Badge color="amber">Pendiente</Badge> : u.status === 'approved' ? <Badge color="emerald">Aprobado</Badge> : <Badge color="rose">Bloqueado</Badge>}</td>
+              <td className="px-6 py-4 text-right flex justify-end gap-2">
+                {u.status !== 'approved' && <button onClick={() => onApprove(u.uid)} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-200 font-bold transition">Aprobar</button>}
+                {u.status !== 'blocked' && u.uid !== currentUserUid && <button onClick={() => onBlock(u.uid)} className="text-xs bg-rose-100 text-rose-700 px-3 py-1 rounded hover:bg-rose-200 font-bold transition">Bloquear</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {users.length === 0 && <div className="p-8 text-center text-slate-400">No hay usuarios registrados.</div>}
+    </div>
+  </div>
+);
+
+const ClientListView = ({ clients, onSelect, onExport, onNew }) => {
+  const [searchTerm, setSearchTerm] = useState("");
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Listado de Clientes</h2><div className="flex gap-2"><button onClick={onExport} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm font-medium"><Download className="w-4 h-4"/> Excel</button><button onClick={onNew} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-800 flex items-center gap-2"><Plus className="w-4 h-4" /> Nuevo</button></div></div>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50"><div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input type="text" placeholder="Buscar por nombre..." className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div></div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">F. Adjudicación</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(client => (
+                <tr key={client.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onSelect(client.id)}>
+                  <td className="px-6 py-4 font-bold text-slate-800">{client.name}</td>
+                  <td className="px-6 py-4">{client.adjudicationDate}</td>
+                  <td className="px-6 py-4">{client.stages?.delivery ? <Badge color="emerald">Entregado</Badge> : <Badge color="black">En Curso</Badge>}</td>
+                  <td className="px-6 py-4 text-right"><ChevronRight className="w-5 h-5 text-slate-400 inline"/></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ====================================================================================
+// 🏢 COMPONENTE: ADMIN CRM (Container Principal)
 // ====================================================================================
 
 function AdminCRM({ onBack }) {
@@ -343,7 +482,6 @@ function AdminCRM({ onBack }) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailData, setEmailData] = useState(null);
   const [stageModal, setStageModal] = useState(null); 
-  const [searchTerm, setSearchTerm] = useState(""); 
   const [adminKeyInput, setAdminKeyInput] = useState("");
   const [showAdminLogin, setShowAdminLogin] = useState(false);
 
@@ -366,6 +504,8 @@ function AdminCRM({ onBack }) {
       e.preventDefault();
       setAuthLoading(true);
       setAuthError(null);
+      
+      // Validación estricta de dominio corporativo
       if (authMode === 'register' && !emailInput.toLowerCase().endsWith(CORPORATE_DOMAIN)) {
           setAuthError(`Solo se permite el registro con correos corporativos (${CORPORATE_DOMAIN})`);
           setAuthLoading(false);
@@ -458,14 +598,15 @@ function AdminCRM({ onBack }) {
   };
 
   const uploadAttachment = async (clientId, stageId, file) => {
-      if (file.size > 800000) { alert("Máximo 800KB"); return; }
+      // ⚠️ Corregido: Limitar a 500KB para asegurar que Base64 no supere 1MB de Firestore
+      if (file.size > 500000) { alert("Máximo 500KB por archivo (Restricción de base de datos)"); return; }
       const reader = new FileReader();
       reader.onload = async (e) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`attachments.${stageId}`]: { name: file.name, type: file.type, data: e.target?.result, date: new Date().toISOString() } });
       reader.readAsDataURL(file);
   };
   
   const deleteClient = async (clientId) => { 
-    if(confirm("¿Eliminar expediente?")) { 
+    if(confirm("¿Eliminar expediente? Esta acción es irreversible.")) { 
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId)); 
       if (selectedClientId === clientId) {
         setView('list'); 
@@ -474,6 +615,7 @@ function AdminCRM({ onBack }) {
     }
   };
 
+  // Función básica de exportación
   const exportToExcel = () => {
     const headers = ["Código", "Nombre", "Cédula", "Ciudad", "Teléfono", "Tipo Adj.", "F. Inscripción", "F. Adjudicación", "Estado General", ...STAGE_CONFIG.map(s => s.label)];
     let tableHTML = `
@@ -515,6 +657,7 @@ function AdminCRM({ onBack }) {
     document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
   };
 
+  // Memoización pesada de estadísticas
   const dashboardStats = useMemo(() => {
     const totalClients = clients.length;
     const activeClients = clients.filter(c => !c.stages?.delivery).length;
@@ -566,7 +709,8 @@ function AdminCRM({ onBack }) {
         { name: 'Atrasados (>20d)', value: clients.filter(c => !c.stages?.delivery && getWorkingDays(c.adjudicationDate, getTodayString()) > 20).length, color: '#ef4444' } // Red
     ].filter(d => d.value > 0);
     
-    const chartData = STAGE_CONFIG.slice(0, 8).map(stage => ({ id: stage.id, name: stage.label, completados: clients.filter(c => c.stages?.[stage.id]).length }));
+    // SE MUESTRAN TODAS LAS ETAPAS (Sin .slice)
+    const chartData = STAGE_CONFIG.map(stage => ({ id: stage.id, name: stage.label, completados: clients.filter(c => c.stages?.[stage.id]).length }));
     
     return { totalClients, activeClients, deliveredClients, avgDeliveryTime: totalAvgTime, riskClients, pieData, chartData, performanceData };
   }, [clients]);
@@ -639,62 +783,34 @@ function AdminCRM({ onBack }) {
         </div>
         <nav className="flex-1 p-4 space-y-2">
           <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest px-4 py-2">Menu Principal</div>
-          {/* CAMBIO: Botones activos ahora son BLANCOS (bg-white) */}
-          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'dashboard' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><PieChartIcon className="w-5 h-5" /> <span>Dashboard</span></button>
-          <button onClick={() => setView('list')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'list' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><Users className="w-5 h-5" /> <span>Clientes</span></button>
-          <button onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'form' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><Plus className="w-5 h-5" /> <span>Nuevo Ingreso</span></button>
+          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'dashboard' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><PieChartIcon className="w-5 h-5" /> <span>Dashboard</span></button>
+          <button onClick={() => setView('list')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'list' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><Users className="w-5 h-5" /> <span>Clientes</span></button>
+          <button onClick={() => setView('form')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'form' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><Plus className="w-5 h-5" /> <span>Nuevo Ingreso</span></button>
           {userProfile?.role === 'admin' && (
               <>
                 <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest px-4 py-2 mt-4">Administración</div>
-                <button onClick={() => setView('admin_users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'admin_users' ? 'bg-white text-slate-900 font-bold shadow-lg' : 'text-slate-800 hover:bg-white/50 hover:text-slate-900 font-medium'}`}><UserCheck className="w-5 h-5" /> <span>Usuarios</span>{pendingUsers.filter(u => u.status === 'pending').length > 0 && (<span className="bg-rose-500 text-white text-[10px] px-1.5 rounded-full ml-auto">{pendingUsers.filter(u => u.status === 'pending').length}</span>)}</button>
+                <button onClick={() => setView('admin_users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === 'admin_users' ? 'bg-yellow-500 text-slate-900 font-medium shadow-lg shadow-yellow-500/20' : 'text-slate-700 hover:bg-yellow-300 hover:text-slate-900'}`}><UserCheck className="w-5 h-5" /> <span>Usuarios</span>{pendingUsers.filter(u => u.status === 'pending').length > 0 && (<span className="bg-rose-500 text-white text-[10px] px-1.5 rounded-full ml-auto">{pendingUsers.filter(u => u.status === 'pending').length}</span>)}</button>
               </>
           )}
         </nav>
         <div className="p-4 border-t border-yellow-500">
              <div className="flex items-center gap-3 mb-3"><div className="w-8 h-8 rounded-full bg-yellow-600 flex items-center justify-center text-xs font-bold text-slate-900 uppercase shadow-sm">{user.displayName ? user.displayName.substring(0,2) : 'US'}</div><div className="flex-1 overflow-hidden"><div className="text-xs font-bold text-slate-900 truncate">{user.displayName || 'Usuario'}</div><div className="text-[10px] text-slate-700 truncate">{userProfile?.role === 'admin' ? 'Administrador' : 'Usuario'}</div></div></div>
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-xs text-slate-800 hover:bg-white/50 py-2 rounded transition border border-yellow-600/30 font-medium"><LogOut className="w-3 h-3"/> Salir</button>
+             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-xs text-slate-700 hover:bg-yellow-300 hover:text-slate-900 py-2 rounded transition border border-yellow-600/30"><LogOut className="w-3 h-3"/> Salir</button>
         </div>
       </aside>
 
       <main className="flex-1 overflow-y-auto h-screen flex flex-col p-4 md:p-8 max-w-7xl mx-auto w-full">
-          {view === 'dashboard' && <div className="space-y-6 animate-fade-in">
-              <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2><button onClick={exportToExcel} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm font-medium"><Download className="w-4 h-4"/> Exportar Excel</button></div>
-              {/* Changed: Card border colors to Black/Yellow */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4"><Card className="p-5 border-l-4 border-l-slate-900"><div className="text-slate-500 text-sm">Clientes Activos</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.activeClients}</div></Card><Card className="p-5 border-l-4 border-l-yellow-500"><div className="text-slate-500 text-sm">En Riesgo</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.riskClients}</div></Card><Card className="p-5 border-l-4 border-l-emerald-500"><div className="text-slate-500 text-sm">Entregados</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.deliveredClients.length}</div></Card><Card className="p-5 border-l-4 border-l-slate-500"><div className="text-slate-500 text-sm">Suma Promedio Etapas</div><div className="text-3xl font-bold text-slate-800">{dashboardStats.avgDeliveryTime}<span className="text-sm text-slate-400 font-normal ml-1">días</span></div></Card></div>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><Card className="p-6 col-span-1 flex flex-col"><h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-slate-500"/> Estado General</h3><div className="w-full h-64 relative flex-1">{dashboardStats.pieData.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={dashboardStats.pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">{dashboardStats.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><RechartsTooltip /><Legend verticalAlign="bottom" /></PieChart></ResponsiveContainer>) : (<div className="absolute inset-0 flex flex-col items-center justify-center text-center"><p className="text-slate-400 text-sm">No hay datos suficientes</p></div>)}</div></Card><Card className="p-6 col-span-1 lg:col-span-2"><h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-slate-500"/> Embudo de Conversión</h3><div className="space-y-4">{dashboardStats.chartData.map((d, i) => (<div key={i} className="group"><div className="flex justify-between text-xs mb-1"><span className="font-medium text-slate-600 cursor-pointer hover:text-slate-900 transition" onClick={() => setStageModal({ id: d.id, label: d.name, clients: clients.filter(c => c.stages?.[d.id]) })}>{d.name}</span><span className="font-bold text-slate-700">{d.completados}</span></div><div className="h-2.5 bg-slate-100 rounded-full overflow-hidden cursor-pointer" onClick={() => setStageModal({ id: d.id, label: d.name, clients: clients.filter(c => c.stages?.[d.id]) })}><div className="h-full bg-slate-900 rounded-full relative group-hover:bg-yellow-500 transition-all duration-500" style={{ width: `${(d.completados / Math.max(dashboardStats.totalClients, 1)) * 100}%` }}></div></div></div>))}</div></Card></div>
-              <div className="grid grid-cols-1">
-                  <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4 text-slate-800 flex items-center gap-2"><BarChart2 className="w-4 h-4 text-slate-500"/> Tiempo Promedio por Etapa vs Meta (SLA)</h3>
-                      <div className="w-full h-72">
-                          <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={dashboardStats.performanceData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} />
-                                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b'}} label={{ value: 'Días', angle: -90, position: 'insideLeft', fontSize: 10, fill: '#94a3b8' }} />
-                                  <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                                  <Legend verticalAlign="top" height={36}/>
-                                  <Bar dataKey="promedio" name="Días Promedio Real" radius={[4, 4, 0, 0]} barSize={20}>
-                                    {dashboardStats.performanceData.map((entry, index) => (
-                                      <Cell key={`cell-${index}`} fill={entry.promedio > entry.meta ? '#ef4444' : '#22c55e'} />
-                                    ))}
-                                  </Bar>
-                                  <Bar dataKey="meta" name="Meta (SLA)" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={20} />
-                              </BarChart>
-                          </ResponsiveContainer>
-                      </div>
-                  </Card>
-              </div>
-          </div>}
+          {view === 'dashboard' && <DashboardView stats={dashboardStats} setStageModal={setStageModal} clients={clients} />}
 
           {view === 'admin_users' && userProfile?.role === 'admin' && (
-              <div className="space-y-6 animate-fade-in"><h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><UserCheck className="w-6 h-6 text-slate-900"/> Gestión de Usuarios</h2><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Usuario</th><th className="px-6 py-4">Rol</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{pendingUsers.map(u => (<tr key={u.id} className="hover:bg-slate-50"><td className="px-6 py-4"><div className="font-bold text-slate-800">{u.displayName}</div><div className="text-xs text-slate-400 font-mono">{u.email}</div></td><td className="px-6 py-4"><Badge color={u.role === 'admin' ? 'black' : 'slate'}>{u.role}</Badge></td><td className="px-6 py-4">{u.status === 'pending' ? <Badge color="amber">Pendiente</Badge> : u.status === 'approved' ? <Badge color="emerald">Aprobado</Badge> : <Badge color="rose">Bloqueado</Badge>}</td><td className="px-6 py-4 text-right flex justify-end gap-2">{u.status !== 'approved' && <button onClick={() => approveUser(u.uid)} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-200 font-bold transition">Aprobar</button>}{u.status !== 'blocked' && u.uid !== user?.uid && <button onClick={() => blockUser(u.uid)} className="text-xs bg-rose-100 text-rose-700 px-3 py-1 rounded hover:bg-rose-200 font-bold transition">Bloquear</button>}</td></tr>))}</tbody></table>{pendingUsers.length === 0 && <div className="p-8 text-center text-slate-400">No hay usuarios registrados.</div>}</div></div>
+              <UserListView users={pendingUsers} onApprove={approveUser} onBlock={blockUser} currentUserUid={user?.uid} />
           )}
 
-          {view === 'list' && <div className="space-y-4 animate-fade-in"><div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Listado de Clientes</h2><div className="flex gap-2"><button onClick={exportToExcel} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-slate-50 transition shadow-sm font-medium"><Download className="w-4 h-4"/> Excel</button><button onClick={() => setView('form')} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-800 flex items-center gap-2"><Plus className="w-4 h-4" /> Nuevo</button></div></div><div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"><div className="p-4 border-b border-slate-100 bg-slate-50/50"><div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input type="text" placeholder="Buscar..." className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-slate-900 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div></div><div className="overflow-x-auto"><table className="w-full text-left text-sm text-slate-600"><thead className="bg-slate-50 text-slate-700 uppercase font-bold text-xs border-b border-slate-200"><tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">F. Adjudicación</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-slate-100">{clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(client => (<tr key={client.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedClientId(client.id); setView('detail'); }}><td className="px-6 py-4 font-bold text-slate-800">{client.name}</td><td className="px-6 py-4">{client.adjudicationDate}</td><td className="px-6 py-4">{client.stages?.delivery ? <Badge color="emerald">Entregado</Badge> : <Badge color="black">En Curso</Badge>}</td><td className="px-6 py-4 text-right"><ChevronRight className="w-5 h-5 text-slate-400 inline"/></td></tr>))}</tbody></table></div></div></div>}
+          {view === 'list' && <ClientListView clients={clients} onSelect={(id) => { setSelectedClientId(id); setView('detail'); }} onExport={exportToExcel} onNew={() => setView('form')} />}
 
           {view === 'form' && <div className="max-w-2xl mx-auto animate-fade-in"><button onClick={() => setView('dashboard')} className="flex items-center text-slate-500 mb-6 hover:text-slate-900"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-8 border-t-4 border-t-slate-900"><h2 className="text-2xl font-bold text-slate-800 mb-6">Nuevo Ingreso</h2><form onSubmit={(e) => { e.preventDefault(); addClient({ name: e.target.name.value, cedula: e.target.cedula.value, phone: e.target.phone.value, clientCode: e.target.clientCode.value, city: e.target.city.value, adjudicationType: e.target.type.value, inscriptionDate: e.target.inscription.value, adjudicationDate: e.target.adjudication.value }); }}><div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><input name="name" required placeholder="Nombre Completo" className="p-2 border rounded" /><input name="cedula" required placeholder="Cédula/RUC" className="p-2 border rounded" /><input name="phone" required placeholder="Teléfono" className="p-2 border rounded" /><input name="clientCode" required placeholder="Código Cliente" className="p-2 border rounded" /><input name="city" required placeholder="Ciudad" className="p-2 border rounded" /><select name="type" className="p-2 border rounded bg-white"><option value="Sorteo">Sorteo</option><option value="Oferta">Oferta</option></select><div className="md:col-span-2 grid grid-cols-2 gap-6"><div className="space-y-1"><label className="text-xs font-bold text-slate-500">F. Inscripción</label><input name="inscription" required type="date" className="w-full p-2 border rounded" /></div><div className="space-y-1"><label className="text-xs font-bold text-slate-500">F. Adjudicación</label><input name="adjudication" required type="date" className="w-full p-2 border rounded" /></div></div></div><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 font-bold">Guardar</button></form></Card></div>}
 
-          {view === 'detail' && selectedClient && <div className="space-y-6 animate-fade-in"><button onClick={() => setView('list')} className="flex items-center text-slate-500 hover:text-slate-900"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-6 border-b-4 border-b-slate-900"><div className="flex justify-between items-start"><div><h2 className="text-2xl font-bold text-slate-800">{selectedClient.name}</h2><div className="text-sm text-slate-500">{selectedClient.clientCode} - {selectedClient.city}</div></div><button onClick={() => deleteClient(selectedClient.id)} className="text-rose-500 hover:bg-rose-50 p-2 rounded"><Trash2 className="w-5 h-5"/></button></div></Card><div className="space-y-3">{STAGE_CONFIG.map((stage, idx) => (<div key={stage.id} className={`p-4 rounded-xl border flex gap-4 items-center ${selectedClient.stages[stage.id] ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${selectedClient.stages[stage.id] ? 'bg-white text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{selectedClient.stages[stage.id] ? <CheckCircle className="w-5 h-5"/> : idx + 1}</div><div className="flex-1"><div className="font-bold text-slate-800 text-sm">{stage.label}</div><div className="text-xs text-slate-500">{stage.days} días hábiles</div></div><div className="flex flex-col items-end gap-2"><input type="date" className="text-xs p-1 border rounded" value={selectedClient.stages[stage.id] || ''} onChange={(e) => updateClientStage(selectedClient.id, stage.id, e.target.value)} />{ATTACHMENT_STAGES.includes(stage.id) && (selectedClient.attachments[stage.id] ? <a href={selectedClient.attachments[stage.id].data} download={selectedClient.attachments[stage.id].name} className="text-xs text-blue-600 underline flex items-center gap-1"><FileText className="w-3 h-3"/> Ver Doc</a> : <label className="text-xs text-slate-400 cursor-pointer hover:text-slate-900 flex items-center gap-1"><Paperclip className="w-3 h-3"/> Adjuntar <input type="file" className="hidden" onChange={(e) => e.target.files && uploadAttachment(selectedClient.id, stage.id, e.target.files[0])} /></label>)}{stage.id === 'docs' && selectedClient.stages[stage.id] && <button onClick={() => { setEmailData({ to: 'talvarado@bopelual.com', subject: `Aprobación Documentos - ${selectedClient.name}`, body: `Estimado Tairo,\n\nSe ha completado la entrega de documentos y pagos para el siguiente cliente:\n\nDETALLES DEL CLIENTE:\n- Nombre: ${selectedClient.name}\n- Cédula/RUC: ${selectedClient.cedula}\n- Código Cliente: ${selectedClient.clientCode}\n- Teléfono: ${selectedClient.phone}\n- Ciudad: ${selectedClient.city}\n\nDETALLES DE ADJUDICACIÓN:\n- Tipo: ${selectedClient.adjudicationType}\n- Fecha Inscripción: ${selectedClient.inscriptionDate}\n- Fecha Adjudicación: ${selectedClient.adjudicationDate}\n\nPor favor proceder con la revisión y aprobación correspondiente.\n\nSaludos,\nAutoClub CRM` }); setShowEmailModal(true); }} className="text-xs bg-slate-900 text-white px-2 py-1 rounded hover:bg-slate-800">Notificar</button>}</div></div>))}</div></div>}
+          {view === 'detail' && selectedClient && <div className="space-y-6 animate-fade-in"><button onClick={() => setView('list')} className="flex items-center text-slate-500 hover:text-slate-900"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-6 border-b-4 border-b-slate-900"><div className="flex justify-between items-start"><div><h2 className="text-2xl font-bold text-slate-800">{selectedClient.name}</h2><div className="text-sm text-slate-500">{selectedClient.clientCode} - {selectedClient.city}</div></div><button onClick={() => deleteClient(selectedClient.id)} className="text-rose-500 hover:bg-rose-50 p-2 rounded"><Trash2 className="w-5 h-5"/></button></div></Card><div className="space-y-3">{STAGE_CONFIG.map((stage, idx) => (<div key={stage.id} className={`p-4 rounded-xl border flex gap-4 items-center ${selectedClient.stages[stage.id] ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${selectedClient.stages[stage.id] ? 'bg-white text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{selectedClient.stages[stage.id] ? <CheckCircle className="w-5 h-5"/> : idx + 1}</div><div className="flex-1"><div className="font-bold text-slate-800 text-sm">{stage.label}</div><div className="text-xs text-slate-500">{stage.days} días hábiles</div>{(() => { const visitIndex = STAGE_CONFIG.findIndex(s => s.id === 'visit'); if (idx > visitIndex && selectedClient.stages['visit'] && selectedClient.stages[stage.id]) { const actual = getWorkingDays(selectedClient.stages['visit'], selectedClient.stages[stage.id]); const expected = STAGE_CONFIG.slice(visitIndex + 1, idx + 1).reduce((acc, c) => acc + c.days, 0); const diff = actual - expected; return diff > 0 ? <div className="text-xs font-bold text-rose-500 mt-1">⚠ {diff} días de retraso</div> : <div className="text-xs font-bold text-emerald-600 mt-1">✓ A tiempo</div>; } })()}</div><div className="flex flex-col items-end gap-2"><input type="date" className="text-xs p-1 border rounded" value={selectedClient.stages[stage.id] || ''} onChange={(e) => updateClientStage(selectedClient.id, stage.id, e.target.value)} />{ATTACHMENT_STAGES.includes(stage.id) && (selectedClient.attachments[stage.id] ? <a href={selectedClient.attachments[stage.id].data} download={selectedClient.attachments[stage.id].name} className="text-xs text-blue-600 underline flex items-center gap-1"><FileText className="w-3 h-3"/> Ver Doc</a> : <label className="text-xs text-slate-400 cursor-pointer hover:text-slate-900 flex items-center gap-1"><Paperclip className="w-3 h-3"/> Adjuntar <input type="file" className="hidden" onChange={(e) => e.target.files && uploadAttachment(selectedClient.id, stage.id, e.target.files[0])} /></label>)}{stage.id === 'docs' && selectedClient.stages[stage.id] && <button onClick={() => { setEmailData({ to: 'talvarado@bopelual.com', subject: `Aprobación Documentos - ${selectedClient.name}`, body: `Estimado Tairo,\n\nSe ha completado la entrega de documentos y pagos para el siguiente cliente:\n\nDETALLES DEL CLIENTE:\n- Nombre: ${selectedClient.name}\n- Cédula/RUC: ${selectedClient.cedula}\n- Código Cliente: ${selectedClient.clientCode}\n- Teléfono: ${selectedClient.phone}\n- Ciudad: ${selectedClient.city}\n\nDETALLES DE ADJUDICACIÓN:\n- Tipo: ${selectedClient.adjudicationType}\n- Fecha Inscripción: ${selectedClient.inscriptionDate}\n- Fecha Adjudicación: ${selectedClient.adjudicationDate}\n\nPor favor proceder con la revisión y aprobación correspondiente.\n\nSaludos,\nAutoClub CRM` }); setShowEmailModal(true); }} className="text-xs bg-slate-900 text-white px-2 py-1 rounded hover:bg-slate-800">Notificar</button>}</div></div>))}</div></div>}
       </main>
 
       {/* MODAL EMAIL */}
@@ -774,7 +890,6 @@ export default function App() {
             {/* Card: Client */}
             <button 
               onClick={() => setCurrentApp('client')}
-              // CAMBIO: Fondo Blanco
               className="group relative bg-white border-2 border-slate-100 p-8 rounded-3xl hover:border-yellow-400 hover:shadow-xl hover:shadow-yellow-400/20 transition-all duration-300 text-left w-full overflow-hidden"
             >
               <div className="relative z-10 flex items-center gap-6">
@@ -794,20 +909,18 @@ export default function App() {
             {/* Card: Admin */}
             <button 
               onClick={() => setCurrentApp('admin')}
-              // CAMBIO: Fondo Blanco en lugar de Slate-900 para consistencia
-              className="group relative bg-white border-2 border-slate-200 p-8 rounded-3xl hover:border-slate-900 hover:shadow-xl text-left w-full overflow-hidden"
+              className="group relative bg-slate-900 border-2 border-slate-900 p-8 rounded-3xl hover:bg-slate-800 transition-all duration-300 hover:shadow-xl text-left w-full overflow-hidden"
             >
               <div className="relative z-10 flex items-center gap-6">
-                {/* CAMBIO: Colores invertidos para mantener contraste en fondo blanco */}
-                <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center group-hover:bg-slate-800 transition-colors duration-300">
-                  <Building className="w-8 h-8 text-white transition-colors" />
+                <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center group-hover:bg-white transition-colors duration-300">
+                  <Building className="w-8 h-8 text-white group-hover:text-slate-900 transition-colors" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-900">Corporativo</h3>
-                  <p className="text-slate-500 font-medium group-hover:text-slate-600">Acceso Administrativo</p>
+                  <h3 className="text-2xl font-bold text-white">Corporativo</h3>
+                  <p className="text-slate-400 font-medium group-hover:text-slate-300">Acceso Administrativo</p>
                 </div>
                 <div className="ml-auto">
-                  <ChevronRight className="w-6 h-6 text-slate-300 group-hover:text-slate-900 transition-colors" />
+                  <ChevronRight className="w-6 h-6 text-slate-600 group-hover:text-white transition-colors" />
                 </div>
               </div>
             </button>
@@ -842,7 +955,6 @@ export default function App() {
   if (currentApp === 'admin') {
     return (
       <div className="relative animate-fade-in">
-        {/* Ahora renderizamos el CRM completo en lugar del placeholder */}
         <AdminCRM onBack={() => setCurrentApp('landing')} />
       </div>
     );
