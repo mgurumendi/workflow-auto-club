@@ -22,7 +22,8 @@ import {
   getDoc,
   query, 
   where, 
-  getDocs 
+  getDocs,
+  deleteField // 🟢 AGREGADO: Para poder eliminar campos específicos (adjuntos)
 } from 'firebase/firestore';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
@@ -73,7 +74,8 @@ const STAGE_CONFIG = [
 
 // Constantes del CRM Admin
 const MAX_SLA_DAYS = 26;
-const ATTACHMENT_STAGES = ['docs', 'approval', 'order_emit', 'invoice', 'contract', 'insurance', 'registration', 'delivery_order'];
+// 🟢 MODIFICACIÓN: Se agregó 'delivery' a la lista de etapas con adjuntos
+const ATTACHMENT_STAGES = ['docs', 'approval', 'order_emit', 'invoice', 'contract', 'insurance', 'registration', 'delivery_order', 'delivery'];
 const MASTER_ADMIN_KEY = "admin2025";
 const CORPORATE_DOMAIN = "@bopelual.com";
 
@@ -402,7 +404,8 @@ const DashboardView = ({ stats, setStageModal, clients }) => (
   </div>
 );
 
-const UserListView = ({ users, onApprove, onBlock, currentUserUid }) => (
+// 🟢 MODIFICACIÓN: Se añade el prop onPromote para recibir la función de asignar admin
+const UserListView = ({ users, onApprove, onBlock, onPromote, currentUserUid }) => (
   <div className="space-y-6 animate-fade-in">
     <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><UserCheck className="w-6 h-6 text-slate-900"/> Gestión de Usuarios</h2>
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -416,6 +419,8 @@ const UserListView = ({ users, onApprove, onBlock, currentUserUid }) => (
               <td className="px-6 py-4">{u.status === 'pending' ? <Badge color="amber">Pendiente</Badge> : u.status === 'approved' ? <Badge color="emerald">Aprobado</Badge> : <Badge color="rose">Bloqueado</Badge>}</td>
               <td className="px-6 py-4 text-right flex justify-end gap-2">
                 {u.status !== 'approved' && <button onClick={() => onApprove(u.uid)} className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-200 font-bold transition">Aprobar</button>}
+                {/* 🟢 AGREGADO: Botón para promover a Admin */}
+                {u.role !== 'admin' && u.status === 'approved' && <button onClick={() => onPromote(u.uid)} className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded hover:bg-indigo-200 font-bold transition">Hacer Admin</button>}
                 {u.status !== 'blocked' && u.uid !== currentUserUid && <button onClick={() => onBlock(u.uid)} className="text-xs bg-rose-100 text-rose-700 px-3 py-1 rounded hover:bg-rose-200 font-bold transition">Bloquear</button>}
               </td>
             </tr>
@@ -482,6 +487,9 @@ function AdminCRM({ onBack }) {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailData, setEmailData] = useState(null);
   const [stageModal, setStageModal] = useState(null); 
+  // 🟢 MODIFICACIÓN: Estado para vista previa
+  const [previewFile, setPreviewFile] = useState(null);
+  
   const [adminKeyInput, setAdminKeyInput] = useState("");
   const [showAdminLogin, setShowAdminLogin] = useState(false);
 
@@ -577,6 +585,19 @@ function AdminCRM({ onBack }) {
 
   const approveUser = async (targetUid) => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', `user_${targetUid}`), { status: 'approved' });
   const blockUser = async (targetUid) => { if(confirm("¿Bloquear?")) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', `user_${targetUid}`), { status: 'blocked' }); };
+  
+  // 🟢 AGREGADO: Función para promover usuario a administrador
+  const promoteToAdmin = async (targetUid) => { 
+      if(confirm("¿Estás seguro de asignar permisos de ADMINISTRADOR a este usuario?")) {
+          try {
+              updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', `user_${targetUid}`), { role: 'admin' }); 
+          } catch (e) {
+              console.error("Error al asignar admin:", e);
+              alert("Error al actualizar el rol.");
+          }
+      }
+  };
+
   const addClient = async (clientData) => {
     if (isWeekend(parseLocalDate(clientData.adjudicationDate))) { alert("Fecha no válida (Fin de semana)."); return; }
     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'), { ...clientData, createdAt: new Date().toISOString(), stages: {}, attachments: {} });
@@ -603,6 +624,22 @@ function AdminCRM({ onBack }) {
       const reader = new FileReader();
       reader.onload = async (e) => await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId), { [`attachments.${stageId}`]: { name: file.name, type: file.type, data: e.target?.result, date: new Date().toISOString() } });
       reader.readAsDataURL(file);
+  };
+  
+  // 🟢 AGREGADO: Función para eliminar adjuntos
+  const deleteAttachment = async (clientId, stageId) => {
+      if (confirm("¿Estás seguro de eliminar este archivo adjunto? Esta acción no se puede deshacer.")) {
+          try {
+              const clientRef = doc(db, 'artifacts', appId, 'public', 'data', 'clients', clientId);
+              // Usamos deleteField() para eliminar solo esa clave del objeto attachments
+              await updateDoc(clientRef, {
+                  [`attachments.${stageId}`]: deleteField()
+              });
+          } catch (e) {
+              console.error("Error al eliminar adjunto:", e);
+              alert("Error al eliminar el archivo. Intente nuevamente.");
+          }
+      }
   };
   
   const deleteClient = async (clientId) => { 
@@ -802,15 +839,16 @@ function AdminCRM({ onBack }) {
       <main className="flex-1 overflow-y-auto h-screen flex flex-col p-4 md:p-8 max-w-7xl mx-auto w-full">
           {view === 'dashboard' && <DashboardView stats={dashboardStats} setStageModal={setStageModal} clients={clients} />}
 
+          {/* 🟢 MODIFICACIÓN: Se pasa la función onPromote al componente UserListView */}
           {view === 'admin_users' && userProfile?.role === 'admin' && (
-              <UserListView users={pendingUsers} onApprove={approveUser} onBlock={blockUser} currentUserUid={user?.uid} />
+              <UserListView users={pendingUsers} onApprove={approveUser} onBlock={blockUser} onPromote={promoteToAdmin} currentUserUid={user?.uid} />
           )}
 
           {view === 'list' && <ClientListView clients={clients} onSelect={(id) => { setSelectedClientId(id); setView('detail'); }} onExport={exportToExcel} onNew={() => setView('form')} />}
 
           {view === 'form' && <div className="max-w-2xl mx-auto animate-fade-in"><button onClick={() => setView('dashboard')} className="flex items-center text-slate-500 mb-6 hover:text-slate-900"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-8 border-t-4 border-t-slate-900"><h2 className="text-2xl font-bold text-slate-800 mb-6">Nuevo Ingreso</h2><form onSubmit={(e) => { e.preventDefault(); addClient({ name: e.target.name.value, cedula: e.target.cedula.value, phone: e.target.phone.value, clientCode: e.target.clientCode.value, city: e.target.city.value, adjudicationType: e.target.type.value, inscriptionDate: e.target.inscription.value, adjudicationDate: e.target.adjudication.value }); }}><div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"><input name="name" required placeholder="Nombre Completo" className="p-2 border rounded" /><input name="cedula" required placeholder="Cédula/RUC" className="p-2 border rounded" /><input name="phone" required placeholder="Teléfono" className="p-2 border rounded" /><input name="clientCode" required placeholder="Código Cliente" className="p-2 border rounded" /><input name="city" required placeholder="Ciudad" className="p-2 border rounded" /><select name="type" className="p-2 border rounded bg-white"><option value="Sorteo">Sorteo</option><option value="Oferta">Oferta</option></select><div className="md:col-span-2 grid grid-cols-2 gap-6"><div className="space-y-1"><label className="text-xs font-bold text-slate-500">F. Inscripción</label><input name="inscription" required type="date" className="w-full p-2 border rounded" /></div><div className="space-y-1"><label className="text-xs font-bold text-slate-500">F. Adjudicación</label><input name="adjudication" required type="date" className="w-full p-2 border rounded" /></div></div></div><button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 font-bold">Guardar</button></form></Card></div>}
 
-          {view === 'detail' && selectedClient && <div className="space-y-6 animate-fade-in"><button onClick={() => setView('list')} className="flex items-center text-slate-500 hover:text-slate-900"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-6 border-b-4 border-b-slate-900"><div className="flex justify-between items-start"><div><h2 className="text-2xl font-bold text-slate-800">{selectedClient.name}</h2><div className="text-sm text-slate-500">{selectedClient.clientCode} - {selectedClient.city}</div></div><button onClick={() => deleteClient(selectedClient.id)} className="text-rose-500 hover:bg-rose-50 p-2 rounded"><Trash2 className="w-5 h-5"/></button></div></Card><div className="space-y-3">{STAGE_CONFIG.map((stage, idx) => (<div key={stage.id} className={`p-4 rounded-xl border flex gap-4 items-center ${selectedClient.stages[stage.id] ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${selectedClient.stages[stage.id] ? 'bg-white text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{selectedClient.stages[stage.id] ? <CheckCircle className="w-5 h-5"/> : idx + 1}</div><div className="flex-1"><div className="font-bold text-slate-800 text-sm">{stage.label}</div><div className="text-xs text-slate-500">{stage.days} días hábiles</div>{(() => { const visitIndex = STAGE_CONFIG.findIndex(s => s.id === 'visit'); if (idx > visitIndex && selectedClient.stages['visit'] && selectedClient.stages[stage.id]) { const actual = getWorkingDays(selectedClient.stages['visit'], selectedClient.stages[stage.id]); const expected = STAGE_CONFIG.slice(visitIndex + 1, idx + 1).reduce((acc, c) => acc + c.days, 0); const diff = actual - expected; return diff > 0 ? <div className="text-xs font-bold text-rose-500 mt-1">⚠ {diff} días de retraso</div> : <div className="text-xs font-bold text-emerald-600 mt-1">✓ A tiempo</div>; } })()}</div><div className="flex flex-col items-end gap-2"><input type="date" className="text-xs p-1 border rounded" value={selectedClient.stages[stage.id] || ''} onChange={(e) => updateClientStage(selectedClient.id, stage.id, e.target.value)} />{ATTACHMENT_STAGES.includes(stage.id) && (selectedClient.attachments[stage.id] ? <a href={selectedClient.attachments[stage.id].data} download={selectedClient.attachments[stage.id].name} className="text-xs text-blue-600 underline flex items-center gap-1"><FileText className="w-3 h-3"/> Ver Doc</a> : <label className="text-xs text-slate-400 cursor-pointer hover:text-slate-900 flex items-center gap-1"><Paperclip className="w-3 h-3"/> Adjuntar <input type="file" className="hidden" onChange={(e) => e.target.files && uploadAttachment(selectedClient.id, stage.id, e.target.files[0])} /></label>)}{stage.id === 'docs' && selectedClient.stages[stage.id] && <button onClick={() => { setEmailData({ to: 'talvarado@bopelual.com', subject: `Aprobación Documentos - ${selectedClient.name}`, body: `Estimado Tairo,\n\nSe ha completado la entrega de documentos y pagos para el siguiente cliente:\n\nDETALLES DEL CLIENTE:\n- Nombre: ${selectedClient.name}\n- Cédula/RUC: ${selectedClient.cedula}\n- Código Cliente: ${selectedClient.clientCode}\n- Teléfono: ${selectedClient.phone}\n- Ciudad: ${selectedClient.city}\n\nDETALLES DE ADJUDICACIÓN:\n- Tipo: ${selectedClient.adjudicationType}\n- Fecha Inscripción: ${selectedClient.inscriptionDate}\n- Fecha Adjudicación: ${selectedClient.adjudicationDate}\n\nPor favor proceder con la revisión y aprobación correspondiente.\n\nSaludos,\nAutoClub CRM` }); setShowEmailModal(true); }} className="text-xs bg-slate-900 text-white px-2 py-1 rounded hover:bg-slate-800">Notificar</button>}</div></div>))}</div></div>}
+          {view === 'detail' && selectedClient && <div className="space-y-6 animate-fade-in"><button onClick={() => setView('list')} className="flex items-center text-slate-500 hover:text-slate-900"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</button><Card className="p-6 border-b-4 border-b-slate-900"><div className="flex justify-between items-start"><div><h2 className="text-2xl font-bold text-slate-800">{selectedClient.name}</h2><div className="text-sm text-slate-500">{selectedClient.clientCode} - {selectedClient.city}</div></div><button onClick={() => deleteClient(selectedClient.id)} className="text-rose-500 hover:bg-rose-50 p-2 rounded"><Trash2 className="w-5 h-5"/></button></div></Card><div className="space-y-3">{STAGE_CONFIG.map((stage, idx) => (<div key={stage.id} className={`p-4 rounded-xl border flex gap-4 items-center ${selectedClient.stages[stage.id] ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}><div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${selectedClient.stages[stage.id] ? 'bg-white text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{selectedClient.stages[stage.id] ? <CheckCircle className="w-5 h-5"/> : idx + 1}</div><div className="flex-1"><div className="font-bold text-slate-800 text-sm">{stage.label}</div><div className="text-xs text-slate-500">{stage.days} días hábiles</div>{(() => { const visitIndex = STAGE_CONFIG.findIndex(s => s.id === 'visit'); if (idx > visitIndex && selectedClient.stages['visit'] && selectedClient.stages[stage.id]) { const actual = getWorkingDays(selectedClient.stages['visit'], selectedClient.stages[stage.id]); const expected = STAGE_CONFIG.slice(visitIndex + 1, idx + 1).reduce((acc, c) => acc + c.days, 0); const diff = actual - expected; return diff > 0 ? <div className="text-xs font-bold text-rose-500 mt-1">⚠ {diff} días de retraso</div> : <div className="text-xs font-bold text-emerald-600 mt-1">✓ A tiempo</div>; } })()}</div><div className="flex flex-col items-end gap-2"><input type="date" className="text-xs p-1 border rounded" value={selectedClient.stages[stage.id] || ''} onChange={(e) => updateClientStage(selectedClient.id, stage.id, e.target.value)} />{ATTACHMENT_STAGES.includes(stage.id) && (selectedClient.attachments[stage.id] ? <div className="flex items-center gap-2"><button onClick={() => setPreviewFile(selectedClient.attachments[stage.id])} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded flex items-center gap-1 transition"><Eye className="w-3 h-3"/> Vista Previa</button><button onClick={() => deleteAttachment(selectedClient.id, stage.id)} className="text-xs text-rose-500 hover:bg-rose-50 p-1 rounded transition" title="Eliminar archivo"><X className="w-4 h-4"/></button></div> : <label className="text-xs text-slate-400 cursor-pointer hover:text-slate-900 flex items-center gap-1"><Paperclip className="w-3 h-3"/> Adjuntar <input type="file" className="hidden" onChange={(e) => e.target.files && uploadAttachment(selectedClient.id, stage.id, e.target.files[0])} /></label>)}{stage.id === 'docs' && selectedClient.stages[stage.id] && <button onClick={() => { setEmailData({ to: 'talvarado@bopelual.com', subject: `Aprobación Documentos - ${selectedClient.name}`, body: `Estimado Tairo,\n\nSe ha completado la entrega de documentos y pagos para el siguiente cliente:\n\nDETALLES DEL CLIENTE:\n- Nombre: ${selectedClient.name}\n- Cédula/RUC: ${selectedClient.cedula}\n- Código Cliente: ${selectedClient.clientCode}\n- Teléfono: ${selectedClient.phone}\n- Ciudad: ${selectedClient.city}\n\nDETALLES DE ADJUDICACIÓN:\n- Tipo: ${selectedClient.adjudicationType}\n- Fecha Inscripción: ${selectedClient.inscriptionDate}\n- Fecha Adjudicación: ${selectedClient.adjudicationDate}\n\nPor favor proceder con la revisión y aprobación correspondiente.\n\nSaludos,\nAutoClub CRM` }); setShowEmailModal(true); }} className="text-xs bg-slate-900 text-white px-2 py-1 rounded hover:bg-slate-800">Notificar</button>}</div></div>))}</div></div>}
       </main>
 
       {/* MODAL EMAIL */}
@@ -824,6 +862,33 @@ function AdminCRM({ onBack }) {
         </div>
       )}
       
+      {/* 🟢 MODIFICACIÓN: MODAL VISTA PREVIA */}
+      {previewFile && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={() => setPreviewFile(null)}>
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                    <h3 className="font-bold text-slate-800 truncate flex items-center gap-2"><FileText className="w-4 h-4"/> {previewFile.name}</h3>
+                    <button onClick={() => setPreviewFile(null)} className="text-slate-500 hover:text-slate-900 transition bg-slate-200 rounded-full p-1"><X className="w-5 h-5"/></button>
+                </div>
+                <div className="flex-1 bg-slate-100 flex items-center justify-center p-4 overflow-auto relative">
+                    {previewFile.type.startsWith('image/') ? (
+                        <img src={previewFile.data} alt="Vista Previa" className="max-w-full max-h-full object-contain shadow-lg rounded" />
+                    ) : (
+                        <div className="w-full h-full min-h-[60vh] bg-white shadow-lg rounded overflow-hidden">
+                            <iframe src={previewFile.data} className="w-full h-full" title="Vista Previa Documento"></iframe>
+                        </div>
+                    )}
+                </div>
+                <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                    <button onClick={() => setPreviewFile(null)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded font-medium transition">Cerrar</button>
+                    <a href={previewFile.data} download={previewFile.name} className="bg-slate-900 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition shadow-lg">
+                        <Download className="w-4 h-4"/> Descargar Original
+                    </a>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* MODAL ETAPAS DASHBOARD */}
       {stageModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
